@@ -1,0 +1,94 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* ── BiteBucket color scheme (warm food-themed) ───────────────────── */
+
+:root {
+  --bb-amber-50: #fffbeb;
+  --bb-amber-100: #fef3c7;
+  --bb-amber-200: #fde68a;
+  --bb-amber-300: #fcd34d;
+  --bb-amber-400: #fbbf24;
+  --bb-amber-500: #f59e0b;
+  --bb-amber-600: #d97706;
+  --bb-amber-700: #b45309;
+  --bb-amber-800: #92400e;
+  --bb-amber-900: #78350f;
+
+  --bb-orange-50: #fff7ed;
+  --bb-orange-100: #ffedd5;
+  --bb-orange-400: #fb923c;
+  --bb-orange-500: #f97316;
+  --bb-orange-600: #ea580c;
+
+  --bb-warm-50: #faf5f0;
+  --bb-warm-100: #f5ebe0;
+  --bb-warm-200: #e8d5c0;
+  --bb-warm-800: #3d2c1e;
+  --bb-warm-900: #2b1d12;
+
+  --bb-sidebar-bg: #1c1410;
+  --bb-sidebar-text: #d4c4b0;
+  --bb-sidebar-active: #f59e0b;
+  --bb-sidebar-hover: rgba(245, 158, 11, 0.12);
+
+  --bb-green-400: #4ade80;
+  --bb-green-500: #22c55e;
+  --bb-green-600: #16a34a;
+}
+
+/* ── Base reset & defaults ────────────────────────────────────────── */
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bb-warm-50);
+  color: var(--bb-warm-900);
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+}
+
+/* ── Leaflet overrides for BiteBucket ─────────────────────────────── */
+
+.leaflet-container {
+  background: #f5ebe0;
+  font-family: inherit;
+}
+
+.leaflet-tooltip {
+  background: var(--bb-warm-900);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.leaflet-tooltip-top::before {
+  border-top-color: var(--bb-warm-900);
+}
+
+/* ── Scrollbar styling ────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bb-warm-200);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bb-amber-300);
+}
