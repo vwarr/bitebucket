@@ -5,7 +5,12 @@
   "windows": [
     "main"
   ],
+  "platforms": [
+    "desktop",
+    "mobile"
+  ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "shell:allow-open"
   ]
 }

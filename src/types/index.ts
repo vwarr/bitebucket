@@ -117,3 +117,12 @@ export interface UserProfile {
   hideFiltered: boolean;
   excludeFilteredFromProgress: boolean;
 }
+
+// ── Toast ─────────────────────────────────────────────────────────────
+
+export interface ToastMessage {
+  dishName: string;
+  countryName: string;
+  countryFlag: string;
+  isFirstInCountry: boolean;
+}

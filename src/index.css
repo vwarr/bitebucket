@@ -92,3 +92,23 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--bb-amber-300);
 }
+
+/* ── Mobile bottom tab bar body padding ──────────────────────────── */
+
+@media (max-width: 767px) {
+  body {
+    padding-bottom: 56px; /* tab bar height */
+  }
+}
+
+/* ── Map page container ───────────────────────────────────────────── */
+
+.map-page-container {
+  height: calc(100svh - 56px); /* subtract tab bar on mobile */
+}
+
+@media (min-width: 768px) {
+  .map-page-container {
+    height: 100%;
+  }
+}

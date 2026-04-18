@@ -24,9 +24,13 @@ let db: Database | null = null;
 
 function saveToLocalStorage(database: Database): void {
   const data = database.export();
-  const encoded = btoa(
-    String.fromCharCode(...new Uint8Array(data))
-  );
+  const uint8 = new Uint8Array(data);
+  const chunks: string[] = [];
+  const chunkSize = 8192;
+  for (let i = 0; i < uint8.length; i += chunkSize) {
+    chunks.push(String.fromCharCode(...uint8.subarray(i, i + chunkSize)));
+  }
+  const encoded = btoa(chunks.join(""));
   localStorage.setItem(DB_STORAGE_KEY, encoded);
 }
 

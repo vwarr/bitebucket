@@ -39,21 +39,25 @@ function MapResizer() {
 
 // ── Country color helper ────────────────────────────────────────────
 
-function progressColor(progress: number): string {
-  if (progress <= 0) return "#d4d4d8"; // gray -- untouched
-  if (progress >= 100) return "#22c55e"; // green -- completed
-  return "#f59e0b"; // amber -- in progress
+// Returns fill color based on tried percentage and whether the country
+// has any want-to-try dishes but no tried dishes yet.
+function progressColor(percentage: number, hasWantToTry: boolean): string {
+  if (percentage >= 100) return "#16a34a"; // green-600 -- complete (100%)
+  if (percentage > 0) return "#d97706";   // amber-600 -- started (>0%)
+  if (hasWantToTry) return "#fde68a";      // amber-200 -- want-to-try but untried
+  return "#fff";                            // untouched
 }
 
 // ── GeoJSON URL ─────────────────────────────────────────────────────
 
 const GEOJSON_URL =
-  "https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson";
+  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson";
 
 // ── Component ───────────────────────────────────────────────────────
 
 export default function WorldMap() {
   const countries = useAppStore((s) => s.countries);
+  const dishes = useAppStore((s) => s.dishes);
   const getCountryProgress = useAppStore((s) => s.getCountryProgress);
   const userEntries = useAppStore((s) => s.userEntries);
   const previewCountry = useAppStore((s) => s.previewCountry);
@@ -64,7 +68,7 @@ export default function WorldMap() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Build a lookup: ISO alpha-2 code -> country id
+  // Build a lookup: ISO alpha-2 code -> country record
   const codeToCountry = useMemo(() => {
     const map = new Map<string, (typeof countries)[0]>();
     for (const c of countries) {
@@ -81,6 +85,18 @@ export default function WorldMap() {
     }
     return map;
   }, [countries, getCountryProgress, userEntries]);
+
+  // Pre-compute which country IDs have at least one want-to-try dish
+  const wantToTryCountryIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const [dishId, entry] of userEntries) {
+      if (entry.status === "want-to-try") {
+        const dish = dishes.find((d) => d.id === dishId);
+        if (dish) set.add(dish.countryId);
+      }
+    }
+    return set;
+  }, [userEntries, dishes]);
 
   // Fetch GeoJSON data
   useEffect(() => {
@@ -123,16 +139,18 @@ export default function WorldMap() {
       if (!feature) return {};
       const country = resolveCountry(feature as GeoFeature);
       const prog = country ? progressByCountryId.get(country.id) ?? null : null;
-      const fill = progressColor(prog ? prog.percentage : 0);
+      const hasWantToTry = country ? wantToTryCountryIds.has(country.id) : false;
+      const fill = progressColor(prog ? prog.percentage : 0, hasWantToTry);
+      const isUntouched = !country || (!prog?.tried && !hasWantToTry);
       return {
         fillColor: fill,
-        fillOpacity: country ? 0.55 : 0.2,
-        color: "#fff",
+        fillOpacity: country ? 0.75 : 0.2,
+        color: isUntouched ? "#9ca3af" : "#fff",
         weight: 1,
         opacity: 0.6,
       };
     },
-    [resolveCountry, progressByCountryId],
+    [resolveCountry, progressByCountryId, wantToTryCountryIds],
   );
 
   // Interaction callbacks per feature
@@ -156,7 +174,7 @@ export default function WorldMap() {
         mouseover: (e: LeafletMouseEvent) => {
           const target = e.target as L.Path;
           target.setStyle({
-            fillOpacity: 0.8,
+            fillOpacity: 0.9,
             weight: 2,
           });
           target.bringToFront();
@@ -165,7 +183,7 @@ export default function WorldMap() {
           const target = e.target as L.Path;
           const c = resolveCountry(geo);
           target.setStyle({
-            fillOpacity: c ? 0.55 : 0.2,
+            fillOpacity: c ? 0.75 : 0.2,
             weight: 1,
           });
         },
@@ -243,25 +261,6 @@ export default function WorldMap() {
 
   return (
     <div className="relative flex flex-1 flex-col">
-      {/* Legend */}
-      <div className="absolute right-4 top-4 z-[1000] flex flex-col gap-2 rounded-xl border border-amber-100 bg-white/90 px-4 py-3 shadow-md backdrop-blur">
-        <p className="text-xs font-semibold uppercase tracking-wider text-amber-700">
-          Progress
-        </p>
-        <div className="flex items-center gap-2 text-xs text-amber-900">
-          <span className="h-3 w-3 rounded-sm bg-[#d4d4d8]" />
-          Untouched
-        </div>
-        <div className="flex items-center gap-2 text-xs text-amber-900">
-          <span className="h-3 w-3 rounded-sm bg-amber-400" />
-          In progress
-        </div>
-        <div className="flex items-center gap-2 text-xs text-amber-900">
-          <span className="h-3 w-3 rounded-sm bg-green-500" />
-          Completed
-        </div>
-      </div>
-
       <MapContainer
         center={[20, 0]}
         zoom={2}

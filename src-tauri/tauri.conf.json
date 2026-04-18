@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "BiteBucket",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.bitebucket.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -32,6 +32,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "iOS": {
+      "minimumSystemVersion": "14.0"
+    },
+    "category": "public.app-category.food-and-drink"
   }
 }

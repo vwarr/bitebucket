@@ -9,6 +9,7 @@ import type {
   DishStatus,
   Region,
   SpiceLevel,
+  ToastMessage,
   UserDishEntry,
   UserProfile,
 } from "../types";
@@ -43,6 +44,10 @@ export interface ProgressSlice {
   getCountryProgress: (countryId: number) => { tried: number; total: number; percentage: number };
   getGlobalProgress: () => { countriesStarted: number; countriesCompleted: number; totalTried: number; totalDishes: number; percentage: number };
   getTimeline: () => UserDishEntry[];
+  getWantToTryDishes: () => Array<{ dish: Dish; country: Country }>;
+  getRecentlyTried: (limit?: number) => Array<{ entry: UserDishEntry; dish: Dish; country: Country }>;
+  getStreak: () => number;
+  getCountriesByStatus: () => { completed: number; started: number; toGo: number };
 }
 
 export interface UISlice {
@@ -61,6 +66,21 @@ export interface UISlice {
   setSearchQuery: (query: string) => void;
   setCategoryFilter: (category: DishCategory | null) => void;
   setRegionFilter: (region: Region | null) => void;
+  onboardingComplete: boolean;
+  setOnboardingComplete: (complete: boolean) => void;
+  showLogSheet: boolean;
+  openLogSheet: () => void;
+  closeLogSheet: () => void;
+  logSearchQuery: string;
+  setLogSearchQuery: (q: string) => void;
+  logConfirmDishId: number | null;
+  setLogConfirmDish: (id: number | null) => void;
+  showCommandPalette: boolean;
+  openCommandPalette: () => void;
+  closeCommandPalette: () => void;
+  toastMessage: ToastMessage | null;
+  showToast: (msg: ToastMessage) => void;
+  hideToast: () => void;
 }
 
 export type AppState = DataSlice & ProfileSlice & ProgressSlice & UISlice;
@@ -223,6 +243,79 @@ const createProgressSlice: StateCreator<AppState, [], [], ProgressSlice> = (set,
     const { userEntries } = get();
     return Array.from(userEntries.values()).filter((e) => e.triedDate !== null).sort((a, b) => new Date(b.triedDate!).getTime() - new Date(a.triedDate!).getTime());
   },
+
+  getWantToTryDishes: () => {
+    const { dishes, countries, userEntries } = get();
+    const result: Array<{ dish: Dish; country: Country }> = [];
+    for (const dish of dishes) {
+      const entry = userEntries.get(dish.id);
+      if (entry?.status === "want-to-try") {
+        const country = countries.find((c) => c.id === dish.countryId);
+        if (country) result.push({ dish, country });
+      }
+    }
+    return result;
+  },
+
+  getRecentlyTried: (limit = 5) => {
+    const { dishes, countries, userEntries } = get();
+    const tried: Array<{ entry: UserDishEntry; dish: Dish; country: Country }> = [];
+    for (const entry of userEntries.values()) {
+      if (entry.status === "tried" && entry.triedDate !== null) {
+        const dish = dishes.find((d) => d.id === entry.dishId);
+        if (dish) {
+          const country = countries.find((c) => c.id === dish.countryId);
+          if (country) tried.push({ entry, dish, country });
+        }
+      }
+    }
+    tried.sort((a, b) => new Date(b.entry.triedDate!).getTime() - new Date(a.entry.triedDate!).getTime());
+    return tried.slice(0, limit);
+  },
+
+  getStreak: () => {
+    const { userEntries } = get();
+    const triedDates = new Set<string>();
+    for (const entry of userEntries.values()) {
+      if (entry.status === "tried" && entry.triedDate !== null) {
+        triedDates.add(new Date(entry.triedDate).toISOString().slice(0, 10));
+      }
+    }
+    let streak = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; ; i++) {
+      const day = new Date(today);
+      day.setDate(today.getDate() - i);
+      const dateStr = day.toISOString().slice(0, 10);
+      if (triedDates.has(dateStr)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  },
+
+  getCountriesByStatus: () => {
+    const { countries } = get();
+    const getCountryProgress = get().getCountryProgress;
+    let completed = 0;
+    let started = 0;
+    let toGo = 0;
+    for (const country of countries) {
+      const progress = getCountryProgress(country.id);
+      if (progress.total === 0) continue;
+      if (progress.tried === progress.total) {
+        completed++;
+      } else if (progress.tried > 0) {
+        started++;
+      } else {
+        toGo++;
+      }
+    }
+    return { completed, started, toGo };
+  },
 });
 
 const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
@@ -242,13 +335,34 @@ const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setCategoryFilter: (category) => set({ categoryFilter: category }),
   setRegionFilter: (region) => set({ regionFilter: region }),
+
+  onboardingComplete: false,
+  setOnboardingComplete: (complete) => set({ onboardingComplete: complete }),
+
+  showLogSheet: false,
+  openLogSheet: () => set({ showLogSheet: true, logSearchQuery: "", logConfirmDishId: null }),
+  closeLogSheet: () => set({ showLogSheet: false, logSearchQuery: "", logConfirmDishId: null }),
+
+  logSearchQuery: "",
+  setLogSearchQuery: (q) => set({ logSearchQuery: q }),
+
+  logConfirmDishId: null,
+  setLogConfirmDish: (id) => set({ logConfirmDishId: id }),
+
+  showCommandPalette: false,
+  openCommandPalette: () => set({ showCommandPalette: true }),
+  closeCommandPalette: () => set({ showCommandPalette: false }),
+
+  toastMessage: null,
+  showToast: (msg) => set({ toastMessage: msg }),
+  hideToast: () => set({ toastMessage: null }),
 });
 
-type PersistedState = Pick<AppState, "profile" | "userEntries">;
+type PersistedState = Pick<AppState, "profile" | "userEntries" | "onboardingComplete">;
 
 const persistOptions: PersistOptions<AppState, PersistedState> = {
   name: "bitebucket-user-data",
-  partialize: (state) => ({ profile: state.profile, userEntries: state.userEntries }),
+  partialize: (state) => ({ profile: state.profile, userEntries: state.userEntries, onboardingComplete: state.onboardingComplete }),
   storage: {
     getItem: (name) => {
       const raw = localStorage.getItem(name);
