@@ -50,8 +50,7 @@ function progressColor(percentage: number, hasWantToTry: boolean): string {
 
 // ── GeoJSON URL ─────────────────────────────────────────────────────
 
-const GEOJSON_URL =
-  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson";
+const GEOJSON_URL = "/countries.geojson";
 
 // ── Component ───────────────────────────────────────────────────────
 
@@ -260,7 +259,7 @@ export default function WorldMap() {
   }
 
   return (
-    <div className="relative flex flex-1 flex-col">
+    <div className="relative flex h-full flex-1 flex-col min-h-0">
       <MapContainer
         center={[20, 0]}
         zoom={2}
@@ -269,7 +268,7 @@ export default function WorldMap() {
         zoomControl={true}
         scrollWheelZoom={true}
         className="z-0 flex-1"
-        style={{ background: "#f5ebe0" }}
+        style={{ background: "#f5ebe0", height: "100%" }}
       >
         <MapResizer />
         <TileLayer

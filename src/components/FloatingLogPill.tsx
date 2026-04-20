@@ -12,8 +12,9 @@ export default function FloatingLogPill() {
       type="button"
       onClick={openLogSheet}
       aria-label="Log a dish"
-      className="fixed bottom-20 left-1/2 z-[40] -translate-x-1/2 cursor-pointer select-none transition-transform hover:scale-105"
+      className="fixed left-1/2 z-[40] -translate-x-1/2 cursor-pointer select-none transition-transform hover:scale-105"
       style={{
+        bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
         background: "#1a1a1a",
         color: "#fbf8f2",
         borderRadius: "9999px",

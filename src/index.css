@@ -97,14 +97,14 @@ body {
 
 @media (max-width: 767px) {
   body {
-    padding-bottom: 56px; /* tab bar height */
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 }
 
 /* ── Map page container ───────────────────────────────────────────── */
 
 .map-page-container {
-  height: calc(100svh - 56px); /* subtract tab bar on mobile */
+  height: calc(100svh - 56px - env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 768px) {

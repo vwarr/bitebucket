@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import DesktopSidebar from "./DesktopSidebar";
 import FloatingLogPill from "./FloatingLogPill";
+import StatusStrip from "./StatusStrip";
 
 // ── Tab / Nav items ──────────────────────────────────────────────────
 
@@ -61,7 +62,16 @@ export default function Layout() {
 
       {/* ── Main content area ─────────────────────────────────────── */}
       <div className="flex flex-1 flex-col min-h-0 relative">
-        <main className="flex-1 overflow-auto">
+        {/* Status strip overlay — map route only, mobile */}
+        {isMapRoute && (
+          <div className="absolute top-2 left-2 right-2 z-10 md:hidden">
+            <StatusStrip />
+          </div>
+        )}
+
+        {/* On map route: no overflow container so the map fills the space.
+            On other routes: overflow-auto + bottom padding for the tab bar. */}
+        <main className={isMapRoute ? "flex-1 min-h-0 h-full" : "flex-1 overflow-auto pb-16 md:pb-0"}>
           <Outlet />
         </main>
       </div>
@@ -75,7 +85,10 @@ export default function Layout() {
       {isMapRoute && <FloatingLogPill />}
 
       {/* ── Mobile bottom tab bar — hidden on desktop ─────────────── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 flex md:hidden bg-white border-t border-gray-200">
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 flex md:hidden bg-white/95 backdrop-blur-sm border-t border-gray-200"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}
