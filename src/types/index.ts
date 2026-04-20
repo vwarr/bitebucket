@@ -107,6 +107,7 @@ export interface UserDishEntry {
   rating: number | null;
   notes: string | null;
   triedDate: string | null;
+  photoUrl: string | null;
 }
 
 export interface UserProfile {

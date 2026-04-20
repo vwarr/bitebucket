@@ -31,7 +31,7 @@ export default function App() {
 
   if (!loaded) {
     return (
-      <div className="flex min-h-svh items-center justify-center bg-[var(--bb-warm-50)]">
+      <div className="flex w-full min-h-svh items-center justify-center bg-[var(--bb-warm-50)]">
         <div className="flex flex-col items-center gap-4">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-amber-200 border-t-amber-500" />
           <p className="text-lg font-medium text-amber-800">

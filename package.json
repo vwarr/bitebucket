@@ -11,6 +11,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "leaflet": "^1.9.4",

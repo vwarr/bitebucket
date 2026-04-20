@@ -19,7 +19,10 @@ export default function LogSheet() {
 
   const [isVisible, setIsVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setPendingPhoto = useAppStore((s) => s.setPendingPhoto);
+  const pendingPhoto = useAppStore((s) => s.pendingPhoto);
 
   // Animate open/close
   useEffect(() => {
@@ -83,6 +86,36 @@ export default function LogSheet() {
     .filter((d) => userEntries.get(d.id)?.status === "want-to-try")
     .slice(0, 12);
 
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxW = 800;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxW) {
+          h = (h * maxW) / w;
+          w = maxW;
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        setPendingPhoto(dataUrl);
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  };
+
   if (!showLogSheet) return null;
 
   return (
@@ -97,7 +130,7 @@ export default function LogSheet() {
     >
       {/* Sheet */}
       <div
-        className={`relative w-full max-w-2xl mx-auto bg-white rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh] transform transition-transform duration-300 ease-out ${
+        className={`relative w-full max-w-2xl mx-auto bg-white rounded-t-2xl shadow-2xl flex flex-col max-h-[85dvh] transform transition-transform duration-300 ease-out ${
           isVisible ? "translate-y-0" : "translate-y-full"
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -152,7 +185,7 @@ export default function LogSheet() {
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-5">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-5 space-y-5">
 
           {/* MATCHES section */}
           {matchedDishes.length > 0 && (
@@ -184,7 +217,7 @@ export default function LogSheet() {
                           <p className={`font-bold text-sm truncate ${isFirst ? "text-amber-900" : "text-gray-900"}`}>
                             {dish.name}
                             {dish.isSignature && (
-                              <span className="ml-1 text-amber-500 text-xs">★</span>
+                              <span className="ml-1 text-amber-500 text-xs" role="img" aria-label="Signature dish">★</span>
                             )}
                           </p>
                           <p className={`text-xs truncate mt-0.5 ${isFirst ? "text-amber-700" : "text-gray-500"}`}>
@@ -233,12 +266,18 @@ export default function LogSheet() {
               <button
                 type="button"
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-gray-300 text-gray-600 text-sm font-medium hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50 transition-all"
-                onClick={() => {/* no-op */}}
+                onClick={() => fileInputRef.current?.click()}
               >
                 <span>📷</span>
                 <span>Photo</span>
               </button>
             </div>
+            {pendingPhoto && (
+              <div className="mt-3 flex items-center gap-2">
+                <img src={pendingPhoto} alt="Pending" className="h-12 w-12 rounded-lg object-cover border border-gray-200" />
+                <button type="button" onClick={() => setPendingPhoto(null)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+              </div>
+            )}
           </section>
 
           {/* SHORTLIST section */}
@@ -269,6 +308,14 @@ export default function LogSheet() {
           )}
 
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handlePhotoSelect}
+        />
       </div>
     </div>
   );

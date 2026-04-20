@@ -64,7 +64,7 @@ export default function Layout() {
       <div className="flex flex-1 flex-col min-h-0 relative">
         {/* Status strip overlay — map route only, mobile */}
         {isMapRoute && (
-          <div className="absolute top-2 left-2 right-2 z-10 md:hidden">
+          <div className="absolute top-2 left-2 right-2 z-20 md:hidden">
             <StatusStrip />
           </div>
         )}

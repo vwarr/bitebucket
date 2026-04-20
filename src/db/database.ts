@@ -246,6 +246,7 @@ export function getUserDishEntry(dishId: number): UserDishEntry | null {
     rating: r[2] as number | null,
     notes: r[3] as string | null,
     triedDate: r[4] as string | null,
+    photoUrl: null,
   };
 }
 
@@ -261,6 +262,7 @@ export function getAllUserDishEntries(): UserDishEntry[] {
     rating: r[2] as number | null,
     notes: r[3] as string | null,
     triedDate: r[4] as string | null,
+    photoUrl: null,
   }));
 }
 

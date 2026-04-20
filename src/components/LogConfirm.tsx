@@ -20,6 +20,9 @@ export default function LogConfirm() {
   const setDishNotes = useAppStore((s) => s.setDishNotes);
   const showToast = useAppStore((s) => s.showToast);
   const getCountryProgress = useAppStore((s) => s.getCountryProgress);
+  const pendingPhoto = useAppStore((s) => s.pendingPhoto);
+  const setPendingPhoto = useAppStore((s) => s.setPendingPhoto);
+  const setDishPhoto = useAppStore((s) => s.setDishPhoto);
 
   const [isVisible, setIsVisible] = useState(false);
   const [when, setWhen] = useState<WhenOption>("today");
@@ -92,6 +95,9 @@ export default function LogConfirm() {
     setDishStatus(dish.id, "tried");
     if (rating !== null) setDishRating(dish.id, rating);
     if (notes.trim()) setDishNotes(dish.id, notes.trim());
+    if (pendingPhoto) {
+      setDishPhoto(dish.id, pendingPhoto);
+    }
 
     showToast({
       dishName: dish.name,
@@ -101,6 +107,7 @@ export default function LogConfirm() {
     });
 
     // Slide down then close everything
+    setPendingPhoto(null);
     setIsVisible(false);
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => {
@@ -199,6 +206,11 @@ export default function LogConfirm() {
               </div>
             </div>
           </div>
+          {pendingPhoto && (
+            <div className="mt-2 rounded-xl overflow-hidden border border-gray-200">
+              <img src={pendingPhoto} alt="Your photo" className="w-full max-h-32 object-cover" />
+            </div>
+          )}
 
           {/* WHEN section */}
           <section>

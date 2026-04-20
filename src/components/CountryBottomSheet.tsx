@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import emailjs from "@emailjs/browser";
 import { useAppStore } from "../stores/appStore";
 import type { DishStatus } from "../types";
 
@@ -39,6 +40,11 @@ export default function CountryBottomSheet() {
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+
+  const [showSuggestForm, setShowSuggestForm] = useState(false);
+  const [suggestName, setSuggestName] = useState("");
+  const [suggestDesc, setSuggestDesc] = useState("");
+  const [suggestStatus, setSuggestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
   // ── Derived data ────────────────────────────────────────────────────
 
@@ -155,6 +161,35 @@ export default function CountryBottomSheet() {
     }, 300);
   };
 
+  const handleSuggestSubmit = async () => {
+    if (!suggestName.trim() || !country) return;
+    setSuggestStatus("sending");
+    try {
+      await emailjs.send(
+        import.meta.env.VITE_EMAILJS_SERVICE_ID || "default_service",
+        import.meta.env.VITE_EMAILJS_TEMPLATE_ID || "default_template",
+        {
+          to_email: "varunswarrier@gmail.com",
+          country_name: country.name,
+          dish_name: suggestName.trim(),
+          dish_description: suggestDesc.trim() || "(no description)",
+          subject: `BiteBucket: Dish suggestion for ${country.name}`,
+        },
+        import.meta.env.VITE_EMAILJS_PUBLIC_KEY || ""
+      );
+      setSuggestStatus("sent");
+      setSuggestName("");
+      setSuggestDesc("");
+      setTimeout(() => {
+        setSuggestStatus("idle");
+        setShowSuggestForm(false);
+      }, 2000);
+    } catch {
+      setSuggestStatus("error");
+      setTimeout(() => setSuggestStatus("idle"), 3000);
+    }
+  };
+
   // ── Early return ────────────────────────────────────────────────────
 
   if (previewedCountryId === null || !country) return null;
@@ -179,6 +214,8 @@ export default function CountryBottomSheet() {
         role="dialog"
         aria-label={`${country.name} dishes`}
         aria-modal="true"
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
         className={`fixed inset-x-0 bottom-0 z-[2001] flex max-h-[85dvh] flex-col rounded-t-2xl bg-[#fdfaf6] shadow-2xl transition-transform duration-300 ease-out ${
           isVisible ? "translate-y-0" : "translate-y-full"
         }`}
@@ -277,6 +314,10 @@ export default function CountryBottomSheet() {
               No dishes match this filter.
             </p>
           ) : (
+            <>
+              <p className="text-[10px] text-stone-400 px-1 mb-2">
+                <span className="text-amber-400">★</span> = must-try signature dish
+              </p>
             <ul className="space-y-1.5">
               {filteredDishes.map((dish) => {
                 const entry = userEntries.get(dish.id);
@@ -425,6 +466,7 @@ export default function CountryBottomSheet() {
                 );
               })}
             </ul>
+            </>
           )}
 
           {/* Drag up hint */}
@@ -433,6 +475,56 @@ export default function CountryBottomSheet() {
               drag up for all {allCountryDishes.length} dishes ↑
             </p>
           )}
+
+          {/* Suggest a dish */}
+          <div className="mt-4 pt-3 border-t border-gray-200">
+            {!showSuggestForm ? (
+              <button
+                type="button"
+                onClick={() => setShowSuggestForm(true)}
+                className="w-full py-2.5 text-sm font-medium text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-colors"
+              >
+                + Suggest a dish for {country.name}
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs font-bold tracking-widest text-amber-600 uppercase">
+                  Suggest a Dish
+                </p>
+                <input
+                  type="text"
+                  value={suggestName}
+                  onChange={(e) => setSuggestName(e.target.value)}
+                  placeholder="Dish name"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                />
+                <textarea
+                  value={suggestDesc}
+                  onChange={(e) => setSuggestDesc(e.target.value)}
+                  placeholder="Brief description (optional)"
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowSuggestForm(false); setSuggestName(""); setSuggestDesc(""); }}
+                    className="flex-1 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSuggestSubmit}
+                    disabled={!suggestName.trim() || suggestStatus === "sending"}
+                    className="flex-1 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                  >
+                    {suggestStatus === "sending" ? "Sending…" : suggestStatus === "sent" ? "✓ Sent!" : suggestStatus === "error" ? "Failed – retry?" : "Submit"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>

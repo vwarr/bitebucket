@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents } from "react-leaflet";
 import type { GeoJSON as LeafletGeoJSON, Layer, LeafletMouseEvent } from "leaflet";
 import L from "leaflet";
 import { useAppStore } from "../stores/appStore";
+import geoData from "../data/countries.geo.json";
 
 // ── Types for GeoJSON data ──────────────────────────────────────────
 
@@ -16,11 +17,6 @@ interface GeoFeature {
     [key: string]: unknown;
   };
   geometry: GeoJSON.Geometry;
-}
-
-interface GeoCollection {
-  type: "FeatureCollection";
-  features: GeoFeature[];
 }
 
 // ── Resize helper ───────────────────────────────────────────────────
@@ -37,6 +33,55 @@ function MapResizer() {
   return null;
 }
 
+// ── Labels overlay at higher zoom ───────────────────────────────────
+
+function LabelsOverlay() {
+  const map = useMap();
+  const [zoom, setZoom] = useState(map.getZoom());
+
+  useMapEvents({
+    zoomend: () => setZoom(map.getZoom()),
+  });
+
+  useEffect(() => {
+    if (!map.getPane("labels")) {
+      const pane = map.createPane("labels");
+      pane.style.zIndex = "650";
+      pane.style.pointerEvents = "none";
+    }
+  }, [map]);
+
+  if (zoom < 4) return null;
+
+  return (
+    <TileLayer
+      url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
+      pane="labels"
+    />
+  );
+}
+
+// ── Map interaction controller ──────────────────────────────────────
+
+function MapInteractionController() {
+  const map = useMap();
+  const previewedCountryId = useAppStore((s) => s.previewedCountryId);
+
+  useEffect(() => {
+    if (previewedCountryId !== null) {
+      map.dragging.disable();
+      map.scrollWheelZoom.disable();
+      map.touchZoom.disable();
+    } else {
+      map.dragging.enable();
+      map.scrollWheelZoom.enable();
+      map.touchZoom.enable();
+    }
+  }, [map, previewedCountryId]);
+
+  return null;
+}
+
 // ── Country color helper ────────────────────────────────────────────
 
 // Returns fill color based on tried percentage and whether the country
@@ -48,10 +93,6 @@ function progressColor(percentage: number, hasWantToTry: boolean): string {
   return "#fff";                            // untouched
 }
 
-// ── GeoJSON URL ─────────────────────────────────────────────────────
-
-const GEOJSON_URL = "/countries.geojson";
-
 // ── Component ───────────────────────────────────────────────────────
 
 export default function WorldMap() {
@@ -62,10 +103,6 @@ export default function WorldMap() {
   const previewCountry = useAppStore((s) => s.previewCountry);
 
   const geoJsonRef = useRef<LeafletGeoJSON | null>(null);
-
-  const [geoData, setGeoData] = useState<GeoCollection | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Build a lookup: ISO alpha-2 code -> country record
   const codeToCountry = useMemo(() => {
@@ -96,32 +133,6 @@ export default function WorldMap() {
     }
     return set;
   }, [userEntries, dishes]);
-
-  // Fetch GeoJSON data
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(GEOJSON_URL);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: GeoCollection = await res.json();
-        if (!cancelled) {
-          setGeoData(data);
-          setLoading(false);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(
-            e instanceof Error ? e.message : "Failed to load map data",
-          );
-          setLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Resolve a GeoJSON feature -> our Country record (if any)
   const resolveCountry = useCallback(
@@ -228,35 +239,15 @@ export default function WorldMap() {
         featureLayer as unknown as { setTooltipContent: (c: string) => void }
       ).setTooltipContent(tip);
     });
+    // Force canvas redraw
+    layer.eachLayer((child) => {
+      if (typeof (child as any).redraw === "function") {
+        (child as any).redraw();
+      }
+    });
   }, [userEntries, style, resolveCountry, progressByCountryId]);
 
   // ── Render ────────────────────────────────────────────────────────
-
-  if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-200 border-t-amber-500" />
-          <p className="text-sm font-medium text-amber-700">
-            Loading world map...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="rounded-xl border border-red-200 bg-red-50 px-6 py-4 text-center">
-          <p className="font-semibold text-red-700">
-            Could not load map data
-          </p>
-          <p className="mt-1 text-sm text-red-500">{error}</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="relative flex h-full flex-1 flex-col min-h-0">
@@ -267,6 +258,7 @@ export default function WorldMap() {
         maxZoom={6}
         zoomControl={true}
         scrollWheelZoom={true}
+        preferCanvas={true}
         className="z-0 flex-1"
         style={{ background: "#f5ebe0", height: "100%" }}
       >
@@ -275,14 +267,14 @@ export default function WorldMap() {
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
         />
-        {geoData && (
-          <GeoJSON
-            ref={geoJsonRef}
-            data={geoData as GeoJSON.GeoJsonObject}
-            style={style}
-            onEachFeature={onEachFeature}
-          />
-        )}
+        <GeoJSON
+          ref={geoJsonRef}
+          data={geoData as unknown as GeoJSON.GeoJsonObject}
+          style={style}
+          onEachFeature={onEachFeature}
+        />
+        <LabelsOverlay />
+        <MapInteractionController />
       </MapContainer>
     </div>
   );

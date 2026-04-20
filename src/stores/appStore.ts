@@ -41,6 +41,7 @@ export interface ProgressSlice {
   setDishStatus: (dishId: number, status: DishStatus) => void;
   setDishRating: (dishId: number, rating: number) => void;
   setDishNotes: (dishId: number, notes: string) => void;
+  setDishPhoto: (dishId: number, photoUrl: string | null) => void;
   getCountryProgress: (countryId: number) => { tried: number; total: number; percentage: number };
   getGlobalProgress: () => { countriesStarted: number; countriesCompleted: number; totalTried: number; totalDishes: number; percentage: number };
   getTimeline: () => UserDishEntry[];
@@ -48,6 +49,7 @@ export interface ProgressSlice {
   getRecentlyTried: (limit?: number) => Array<{ entry: UserDishEntry; dish: Dish; country: Country }>;
   getStreak: () => number;
   getCountriesByStatus: () => { completed: number; started: number; toGo: number };
+  getCountriesByStatusList: () => { completed: Country[]; started: Country[]; toGo: Country[] };
 }
 
 export interface UISlice {
@@ -81,6 +83,8 @@ export interface UISlice {
   toastMessage: ToastMessage | null;
   showToast: (msg: ToastMessage) => void;
   hideToast: () => void;
+  pendingPhoto: string | null;
+  setPendingPhoto: (url: string | null) => void;
 }
 
 export type AppState = DataSlice & ProfileSlice & ProgressSlice & UISlice;
@@ -97,7 +101,7 @@ const DEFAULT_PROFILE: UserProfile = {
 function ensureEntry(entries: Map<number, UserDishEntry>, dishId: number): UserDishEntry {
   const existing = entries.get(dishId);
   if (existing) return existing;
-  return { dishId, status: "untried", rating: null, notes: null, triedDate: null };
+  return { dishId, status: "untried", rating: null, notes: null, triedDate: null, photoUrl: null };
 }
 
 const createDataSlice: StateCreator<AppState, [], [], DataSlice> = (set) => ({
@@ -203,6 +207,15 @@ const createProgressSlice: StateCreator<AppState, [], [], ProgressSlice> = (set,
       const next = new Map(state.userEntries);
       const entry = ensureEntry(next, dishId);
       next.set(dishId, { ...entry, notes });
+      return { userEntries: next };
+    });
+  },
+
+  setDishPhoto: (dishId, photoUrl) => {
+    set((state) => {
+      const next = new Map(state.userEntries);
+      const entry = ensureEntry(next, dishId);
+      next.set(dishId, { ...entry, photoUrl });
       return { userEntries: next };
     });
   },
@@ -316,6 +329,26 @@ const createProgressSlice: StateCreator<AppState, [], [], ProgressSlice> = (set,
     }
     return { completed, started, toGo };
   },
+
+  getCountriesByStatusList: () => {
+    const { countries } = get();
+    const getCountryProgress = get().getCountryProgress;
+    const completed: Country[] = [];
+    const started: Country[] = [];
+    const toGo: Country[] = [];
+    for (const country of countries) {
+      const progress = getCountryProgress(country.id);
+      if (progress.total === 0) continue;
+      if (progress.tried === progress.total) {
+        completed.push(country);
+      } else if (progress.tried > 0) {
+        started.push(country);
+      } else {
+        toGo.push(country);
+      }
+    }
+    return { completed, started, toGo };
+  },
 });
 
 const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
@@ -356,6 +389,9 @@ const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
   toastMessage: null,
   showToast: (msg) => set({ toastMessage: msg }),
   hideToast: () => set({ toastMessage: null }),
+
+  pendingPhoto: null,
+  setPendingPhoto: (url) => set({ pendingPhoto: url }),
 });
 
 type PersistedState = Pick<AppState, "profile" | "userEntries" | "onboardingComplete">;
@@ -369,14 +405,29 @@ const persistOptions: PersistOptions<AppState, PersistedState> = {
       if (!raw) return null;
       try {
         const parsed = JSON.parse(raw);
-        if (parsed.state?.userEntries) {
-          parsed.state.userEntries = new Map<number, UserDishEntry>(parsed.state.userEntries);
+        if (parsed.state) {
+          try {
+            if (Array.isArray(parsed.state.userEntries)) {
+              parsed.state.userEntries = new Map<number, UserDishEntry>(parsed.state.userEntries);
+            } else {
+              parsed.state.userEntries = new Map<number, UserDishEntry>();
+            }
+          } catch {
+            parsed.state.userEntries = new Map<number, UserDishEntry>();
+          }
         }
         return parsed;
       } catch { return null; }
     },
     setItem: (name, value) => {
-      const serializable = { ...value, state: { ...value.state, userEntries: Array.from((value.state.userEntries as Map<number, UserDishEntry>).entries()) } };
+      const entries = value.state.userEntries;
+      const serializedEntries = entries instanceof Map
+        ? Array.from(entries.entries())
+        : [];
+      const serializable = {
+        ...value,
+        state: { ...value.state, userEntries: serializedEntries },
+      };
       localStorage.setItem(name, JSON.stringify(serializable));
     },
     removeItem: (name) => localStorage.removeItem(name),
