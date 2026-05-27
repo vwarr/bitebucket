@@ -1,8 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../stores/appStore";
 import ProgressBar from "../components/ProgressBar";
 import type { Region } from "../types";
+
+// ── Module-level scroll-restore state ──────────────────────────────
+// Persists across CountryListPage unmount/remount within the same SPA session.
+// Edge-swipe-to-go-back is intentionally not implemented; Tauri's webview
+// does not expose iOS swipe gestures reliably.
+let savedScroll = 0;
+let cameFromCountryId: number | null = null;
 
 // ── All 16 regions ──────────────────────────────────────────────────
 
@@ -39,6 +46,19 @@ type SortMode = "alpha" | "region";
 
 // ── Component ───────────────────────────────────────────────────────
 
+function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+  let node: HTMLElement | null = el?.parentElement ?? null;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const oy = style.overflowY;
+    if ((oy === "auto" || oy === "scroll") && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
 export default function CountryListPage() {
   const navigate = useNavigate();
   const {
@@ -53,6 +73,36 @@ export default function CountryListPage() {
   } = useAppStore();
 
   const [sortMode, setSortMode] = useState<SortMode>("alpha");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [pulseId, setPulseId] = useState<number | null>(null);
+
+  // Restore scroll synchronously before paint
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const scroller = findScrollParent(root);
+    if (savedScroll > 0) {
+      if (scroller) scroller.scrollTop = savedScroll;
+      else window.scrollTo(0, savedScroll);
+    }
+    if (cameFromCountryId !== null) {
+      setPulseId(cameFromCountryId);
+      const id = cameFromCountryId;
+      cameFromCountryId = null;
+      const t = setTimeout(() => {
+        setPulseId((cur) => (cur === id ? null : cur));
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  // Save scroll on unmount
+  useEffect(() => {
+    return () => {
+      const root = rootRef.current;
+      const scroller = findScrollParent(root);
+      savedScroll = scroller ? scroller.scrollTop : window.scrollY;
+    };
+  }, []);
 
   // Signature dish count per country
   const signatureCounts = useMemo(() => {
@@ -95,7 +145,18 @@ export default function CountryListPage() {
   }, [countries, regionFilter, searchQuery, sortMode]);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div ref={rootRef} className="max-w-6xl mx-auto px-4 py-8">
+      <style>{`
+        @keyframes bb-pulse-once {
+          0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); border-color: rgb(254, 215, 170); }
+          25%  { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.45); border-color: rgb(245, 158, 11); }
+          70%  { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2); border-color: rgb(245, 158, 11); }
+          100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); border-color: rgb(254, 215, 170); }
+        }
+        .pulse-once {
+          animation: bb-pulse-once 1.5s ease-out 1;
+        }
+      `}</style>
       {/* Header */}
       <h1 className="text-3xl font-bold text-gray-900 mb-1">Explore Countries</h1>
       <p className="text-gray-500 mb-6">
@@ -172,10 +233,17 @@ export default function CountryListPage() {
                 key={country.id}
                 type="button"
                 onClick={() => {
+                  // Save scroll + which country we're leaving from for pulse-on-return.
+                  const root = rootRef.current;
+                  const scroller = findScrollParent(root);
+                  savedScroll = scroller ? scroller.scrollTop : window.scrollY;
+                  cameFromCountryId = country.id;
                   selectCountry(country.id);
                   navigate(`/country/${country.id}`);
                 }}
-                className="text-left rounded-xl border border-amber-200 bg-white p-5 transition-all duration-200 hover:shadow-lg hover:shadow-amber-100/50 hover:-translate-y-0.5 cursor-pointer group"
+                className={`text-left rounded-xl border border-amber-200 bg-white p-5 transition-all duration-200 hover:shadow-lg hover:shadow-amber-100/50 hover:-translate-y-0.5 cursor-pointer group ${
+                  pulseId === country.id ? "pulse-once" : ""
+                }`}
               >
                 {/* Flag + name */}
                 <div className="flex items-center gap-3 mb-3">

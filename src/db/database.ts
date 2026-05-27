@@ -53,7 +53,9 @@ const SCHEMA = `
     name        TEXT    NOT NULL,
     code        TEXT    NOT NULL,
     region      TEXT    NOT NULL,
-    continent   TEXT    NOT NULL
+    continent   TEXT    NOT NULL,
+    capital     TEXT,
+    population  INTEGER
   );
 
   CREATE TABLE IF NOT EXISTS dishes (
@@ -111,6 +113,22 @@ export async function initDatabase(): Promise<Database> {
 
   db.run(SCHEMA);
 
+  // Migration: ensure countries has capital + population columns (older DBs may lack them)
+  try {
+    const colInfo = db.exec("PRAGMA table_info(countries)");
+    if (colInfo.length > 0) {
+      const cols = colInfo[0].values.map((r) => r[1] as string);
+      if (!cols.includes("capital")) {
+        db.run("ALTER TABLE countries ADD COLUMN capital TEXT");
+      }
+      if (!cols.includes("population")) {
+        db.run("ALTER TABLE countries ADD COLUMN population INTEGER");
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   // Ensure there is always a profile row
   const profileRows = db.exec("SELECT COUNT(*) FROM user_profile");
   if (profileRows.length === 0 || (profileRows[0].values[0][0] as number) === 0) {
@@ -136,7 +154,7 @@ export function getDb(): Database {
 
 export function getCountries(): Country[] {
   const d = getDb();
-  const rows = d.exec("SELECT id, name, code, region, continent FROM countries ORDER BY name");
+  const rows = d.exec("SELECT id, name, code, region, continent, capital, population FROM countries ORDER BY name");
   if (rows.length === 0) return [];
   return rows[0].values.map((r) => ({
     id: r[0] as number,
@@ -144,6 +162,8 @@ export function getCountries(): Country[] {
     code: r[2] as string,
     region: r[3] as Region,
     continent: r[4] as Continent,
+    capital: (r[5] as string | null) ?? undefined,
+    population: (r[6] as number | null) ?? undefined,
   }));
 }
 

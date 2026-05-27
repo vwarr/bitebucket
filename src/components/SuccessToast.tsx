@@ -93,7 +93,18 @@ export default function SuccessToast() {
 
   if (toastMessage === null) return null;
 
-  const { dishName, countryName, countryFlag, isFirstInCountry } = toastMessage;
+  const { dishName, countryName, countryFlag, isFirstInCountry, dishCountInCountry } = toastMessage;
+
+  const ordinal = (n: number): string => {
+    const mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+    switch (n % 10) {
+      case 1: return `${n}st`;
+      case 2: return `${n}nd`;
+      case 3: return `${n}rd`;
+      default: return `${n}th`;
+    }
+  };
 
   return (
     <div
@@ -127,8 +138,10 @@ export default function SuccessToast() {
           </p>
           <p className="text-xs text-gray-500 mt-0.5 truncate">
             {countryFlag} {countryName}
-            {isFirstInCountry && (
-              <span className="ml-1 font-semibold text-green-600"> · your 1st dish here</span>
+            {dishCountInCountry > 0 && (
+              <span className={`ml-1 font-semibold ${isFirstInCountry ? "text-green-600" : "text-gray-600"}`}>
+                {" · "}your {ordinal(dishCountInCountry)} dish here
+              </span>
             )}
           </p>
         </div>

@@ -43,6 +43,7 @@ export default function DishCard({ dish, countryName }: DishCardProps) {
   const status: DishStatus = entry?.status ?? "untried";
   const filtered = isDishFiltered(dish);
   const warnings = getDishWarnings(dish);
+  const skipped = status === "skipped";
 
   function cycleStatus(target: DishStatus) {
     // Toggle off if already set, otherwise set
@@ -55,9 +56,33 @@ export default function DishCard({ dish, countryName }: DishCardProps) {
       className={`relative rounded-xl border transition-all duration-200 ${
         filtered
           ? "border-gray-200 bg-gray-50 opacity-60"
+          : skipped
+          ? "border-stone-200 bg-stone-50 opacity-60 line-through"
           : "border-amber-200 bg-white hover:shadow-lg hover:shadow-amber-100/50 hover:-translate-y-0.5"
       }`}
     >
+      {/* Skipped indicator (top-right) */}
+      {skipped && !filtered && (
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
+          <span
+            aria-label="Skipped"
+            className="flex h-5 w-5 items-center justify-center rounded-full border border-stone-400 text-stone-500 text-[11px] leading-none"
+          >
+            ✕
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDishStatus(dish.id, "untried");
+            }}
+            className="rounded-full bg-white border border-stone-300 px-2 py-0.5 text-[10px] font-medium text-stone-600 hover:bg-stone-100 cursor-pointer"
+          >
+            undo
+          </button>
+        </div>
+      )}
+
       {/* Warning overlay for filtered dishes */}
       {filtered && warnings.length > 0 && (
         <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-gray-900/10 backdrop-blur-[1px]">

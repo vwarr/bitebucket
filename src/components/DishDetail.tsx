@@ -128,7 +128,7 @@ export default function DishDetail() {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex justify-end transition-colors duration-300 ${
+      className={`fixed inset-0 z-[3000] flex justify-end transition-colors duration-300 ${
         isVisible ? "bg-black/40 backdrop-blur-sm" : "bg-transparent"
       }`}
       onClick={handleBackdropClick}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import emailjs from "@emailjs/browser";
 import { useAppStore } from "../stores/appStore";
 import type { DishStatus } from "../types";
@@ -9,6 +10,23 @@ function flagEmoji(code: string): string {
   return [...code.toUpperCase()]
     .map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
     .join("");
+}
+
+function formatPopulation(pop: number): string {
+  if (pop >= 1_000_000_000) return `${(pop / 1_000_000_000).toFixed(1)}B`;
+  if (pop >= 1_000_000) {
+    const m = pop / 1_000_000;
+    return `${m >= 100 ? Math.round(m) : m.toFixed(1)}M`;
+  }
+  if (pop >= 1_000) return `${Math.round(pop / 1_000)}k`;
+  return `${pop}`;
+}
+
+function buildMetaLine(country: { region: string; capital?: string; population?: number }): string {
+  const parts: string[] = [country.region.toUpperCase()];
+  if (country.capital) parts.push(`CAPITAL ${country.capital.toUpperCase()}`);
+  if (country.population != null) parts.push(`POP ${formatPopulation(country.population)}`);
+  return parts.join(" · ");
 }
 
 function formatDate(iso: string | null): string {
@@ -24,6 +42,7 @@ type FilterKey = "all" | "untried" | "signature" | "mild";
 // ── CountryBottomSheet ───────────────────────────────────────────────
 
 export default function CountryBottomSheet() {
+  const navigate = useNavigate();
   const previewedCountryId = useAppStore((s) => s.previewedCountryId);
   const closePreview = useAppStore((s) => s.closePreview);
   const countries = useAppStore((s) => s.countries);
@@ -81,7 +100,7 @@ export default function CountryBottomSheet() {
     () =>
       allCountryDishes.filter((d) => {
         const s = userEntries.get(d.id)?.status ?? "untried";
-        return s === "untried" || s === "skipped";
+        return s === "untried";
       }).length,
     [allCountryDishes, userEntries],
   );
@@ -227,17 +246,34 @@ export default function CountryBottomSheet() {
 
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-3 px-5 py-3">
-          <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={() => {
+              const cid = country.id;
+              closePreview();
+              navigate(`/country/${cid}`);
+            }}
+            aria-label={`Open ${country.name} foods page`}
+            className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-lg -mx-1 px-1 py-0.5 transition-colors hover:bg-stone-100 active:bg-stone-200 cursor-pointer"
+          >
             <span className="text-5xl leading-none shrink-0" aria-hidden="true">
               {flagEmoji(country.code)}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 className="text-xl font-bold text-stone-900 leading-tight truncate">
                 {country.name}
               </h2>
-              <p className="text-xs text-stone-500 mt-0.5">{country.region}</p>
+              <p className="font-mono text-[10px] uppercase tracking-wide text-stone-500 mt-0.5 truncate">
+                {buildMetaLine(country)}
+              </p>
             </div>
-          </div>
+            <span
+              className="shrink-0 text-stone-400 text-2xl leading-none font-light"
+              aria-hidden="true"
+            >
+              ›
+            </span>
+          </button>
           <button
             type="button"
             onClick={handleClose}
@@ -324,6 +360,44 @@ export default function CountryBottomSheet() {
                 const status: DishStatus = entry?.status ?? "untried";
                 const tried = status === "tried";
                 const wantToTry = status === "want-to-try";
+                const skipped = status === "skipped";
+
+                if (skipped) {
+                  // ── Skipped dish ────────────────────────────────
+                  return (
+                    <li
+                      key={dish.id}
+                      className="flex items-center gap-3 rounded-xl bg-stone-50 border border-dashed border-stone-300 px-3 py-2.5 opacity-60"
+                    >
+                      <span
+                        aria-label="Skipped"
+                        className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-stone-400 text-stone-500 text-sm"
+                      >
+                        ✕
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => selectDish(dish.id)}
+                        className="flex-1 text-left min-w-0"
+                      >
+                        <p className="text-sm font-medium text-stone-600 truncate line-through">
+                          {dish.name}
+                          {dish.isSignature && (
+                            <span className="ml-1 text-stone-400" title="Signature">★</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-stone-500">skipped · {dish.category}</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDishStatus(dish.id, "untried")}
+                        className="shrink-0 rounded-full border border-stone-300 px-2.5 py-1 font-mono text-xs font-medium text-stone-500 transition-colors hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
+                      >
+                        undo
+                      </button>
+                    </li>
+                  );
+                }
 
                 if (tried) {
                   // ── Tried dish ──────────────────────────────────

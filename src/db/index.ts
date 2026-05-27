@@ -4,13 +4,13 @@ import {
   getAllDishes,
   persist as dbPersist,
 } from "./database";
-import { seedDatabase } from "../data/seed";
+import { seedDatabase, backfillMissingRows } from "../data/seed";
 
 /**
  * Bump this version whenever seed data changes so that existing users
  * get their countries/dishes tables re-populated with the latest dataset.
  */
-const SEED_VERSION = 2;
+const SEED_VERSION = 4;
 const SEED_VERSION_KEY = "bitebucket_seed_version";
 
 export async function initDB() {
@@ -32,6 +32,18 @@ export async function initDB() {
     seedDatabase(db);
     localStorage.setItem(SEED_VERSION_KEY, String(SEED_VERSION));
     dbPersist();
+  }
+
+  // Self-healing: always run an idempotent backfill of any seed
+  // countries/dishes/allergens missing from the user's local DB, even when the
+  // stored version already matches SEED_VERSION. This guarantees that future
+  // seed additions show up on next load without needing a version bump, and
+  // never touches user progress (user_dish_entries is never modified).
+  try {
+    backfillMissingRows(db);
+    dbPersist();
+  } catch {
+    // best-effort — backfill must never break app loading
   }
 
   return db;

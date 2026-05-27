@@ -1,6 +1,22 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
-import type { AllergenType, DietaryRestriction, SpiceLevel } from "../types";
+import type {
+  AllergenType,
+  DietaryRestriction,
+  Milestone,
+  SpiceLevel,
+} from "../types";
+import {
+  getAllMilestones,
+  getUnlockedMilestoneIds,
+  MILESTONE_CATEGORY_COLORS,
+  MILESTONE_CATEGORY_LABELS,
+} from "../data/milestones";
+import {
+  buildReasonContext,
+  pickDiscoverReason,
+  reasonPillStyles,
+} from "../utils/discoverReasons";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -105,6 +121,66 @@ function SectionHeader({
   );
 }
 
+// ── Stamp detail dialog ──────────────────────────────────────────────
+
+function StampDetailDialog({
+  milestone,
+  onClose,
+}: {
+  milestone: Milestone;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const colors = MILESTONE_CATEGORY_COLORS[milestone.categoryId];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={milestone.name}
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-xs rounded-2xl border border-[var(--bb-warm-200)] bg-white p-5 shadow-xl text-center"
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-3 top-3 text-[var(--bb-warm-800)]/40 hover:text-[var(--bb-warm-900)] transition-colors cursor-pointer text-lg leading-none"
+        >
+          &times;
+        </button>
+
+        <div
+          className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl border ${colors.bg} ${colors.border}`}
+        >
+          <span className="text-3xl">{milestone.icon}</span>
+        </div>
+
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--bb-warm-800)]/50">
+          {MILESTONE_CATEGORY_LABELS[milestone.categoryId]}
+        </p>
+        <h3 className="mt-0.5 text-base font-semibold text-[var(--bb-warm-900)]">
+          {milestone.name}
+        </h3>
+        <p className="mt-2 text-sm text-[var(--bb-warm-800)]/70">
+          {milestone.description}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── MePage ───────────────────────────────────────────────────────────
 
 export default function MePage() {
@@ -119,6 +195,9 @@ export default function MePage() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [customInput, setCustomInput] = useState("");
+  const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(
+    null,
+  );
 
   // ── Want to try ─────────────────────────────────────────────────────
   const wantToTry = useMemo(() => getWantToTryDishes(), [userEntries, dishes, countries]);
@@ -136,7 +215,8 @@ export default function MePage() {
     const candidates = dishes.filter((d) => {
       if (isDishFiltered(d)) return false;
       if (triedCountryIds.has(d.countryId)) return false;
-      if (userEntries.get(d.id)?.status === "tried") return false;
+      const s = userEntries.get(d.id)?.status;
+      if (s === "tried" || s === "skipped") return false;
       return true;
     });
     // Prefer signature dishes, variety of regions
@@ -210,6 +290,34 @@ export default function MePage() {
 
   const spiceLabel = SPICE_LEVELS.find((s) => s.value === profile.maxSpiceLevel)?.label ?? profile.maxSpiceLevel;
 
+  // ── Milestones (stamp wall) ────────────────────────────────────────
+  const milestoneState = useMemo(
+    () => ({ countries, dishes, userEntries }),
+    [countries, dishes, userEntries],
+  );
+  const allMilestones = useMemo(
+    () => getAllMilestones(milestoneState),
+    [milestoneState],
+  );
+  const unlockedSet = useMemo(
+    () => new Set(getUnlockedMilestoneIds(milestoneState)),
+    [milestoneState],
+  );
+  const unlockedMilestones = useMemo(
+    () => allMilestones.filter((m) => unlockedSet.has(m.id)),
+    [allMilestones, unlockedSet],
+  );
+  const recentlyUnlocked = useMemo(
+    () => unlockedMilestones.slice(-6).reverse(),
+    [unlockedMilestones],
+  );
+
+  // ── Discover reason context ────────────────────────────────────────
+  const reasonCtx = useMemo(
+    () => buildReasonContext(milestoneState),
+    [milestoneState],
+  );
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-5 space-y-6 pb-10">
       {/* ── Title ──────────────────────────────────────────────────── */}
@@ -219,6 +327,90 @@ export default function MePage() {
           Your food profile &amp; personalized picks
         </p>
       </div>
+
+      {/* ── Stamp Wall ─────────────────────────────────────────────── */}
+      <section>
+        <SectionHeader
+          emoji="🏅"
+          title="Stamps"
+          subtitle={`${unlockedMilestones.length} of ${allMilestones.length} unlocked`}
+        />
+
+        {recentlyUnlocked.length > 0 && (
+          <>
+            <p className="text-xs font-medium text-[var(--bb-warm-800)]/50 uppercase tracking-wide mb-2">
+              Recently unlocked
+            </p>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {recentlyUnlocked.map((m) => {
+                const colors = MILESTONE_CATEGORY_COLORS[m.categoryId];
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setSelectedMilestone(m)}
+                    title={`${m.name} — ${m.description}`}
+                    className={`aspect-square rounded-xl border ${colors.bg} ${colors.border} flex flex-col items-center justify-center p-2 text-center cursor-pointer hover:shadow-sm transition-all`}
+                    style={{ minHeight: 80 }}
+                  >
+                    <span className="text-2xl mb-1">{m.icon}</span>
+                    <span className="text-[10px] font-medium text-[var(--bb-warm-900)] line-clamp-2 leading-tight">
+                      {m.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <p className="text-xs font-medium text-[var(--bb-warm-800)]/50 uppercase tracking-wide mb-2">
+          All stamps
+        </p>
+        <div className="grid grid-cols-4 gap-2">
+          {allMilestones.map((m) => {
+            const isUnlocked = unlockedSet.has(m.id);
+            const colors = MILESTONE_CATEGORY_COLORS[m.categoryId];
+            if (isUnlocked) {
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setSelectedMilestone(m)}
+                  title={`${m.name} — ${m.description}`}
+                  className={`aspect-square rounded-lg border ${colors.bg} ${colors.border} flex flex-col items-center justify-center p-1 cursor-pointer hover:shadow-sm transition-all`}
+                >
+                  <span className="text-lg">{m.icon}</span>
+                  <span className="text-[9px] font-medium text-[var(--bb-warm-900)] line-clamp-1 leading-tight mt-0.5">
+                    {m.name}
+                  </span>
+                </button>
+              );
+            }
+            // Locked: hidden ones show "??", visible ones show icon faded
+            const showIcon = !m.hidden;
+            return (
+              <div
+                key={m.id}
+                title={
+                  m.hidden
+                    ? "Hidden milestone"
+                    : `${MILESTONE_CATEGORY_LABELS[m.categoryId]}: ${m.name}`
+                }
+                className="aspect-square rounded-lg border border-dashed border-[var(--bb-warm-200)] bg-[var(--bb-warm-50)] flex flex-col items-center justify-center p-1 opacity-40"
+              >
+                <span className="text-lg">{showIcon ? m.icon : "?"}</span>
+                <span className="text-[9px] font-medium text-[var(--bb-warm-800)] mt-0.5">
+                  ??
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-xs text-[var(--bb-warm-800)]/50 mt-3 text-center">
+          {unlockedMilestones.length} of {allMilestones.length} unlocked
+        </p>
+      </section>
 
       {/* ── Section 1: Profile Summary ─────────────────────────────── */}
       <section className="bg-white rounded-xl border border-[var(--bb-warm-200)] p-4 shadow-sm">
@@ -531,6 +723,8 @@ export default function MePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {discoverItems.map((dish) => {
               const country = countryMap.get(dish.countryId);
+              const reason = pickDiscoverReason(dish, reasonCtx);
+              const pill = reason ? reasonPillStyles(reason.source) : null;
               return (
                 <button
                   key={dish.id}
@@ -552,6 +746,16 @@ export default function MePage() {
                         </span>
                       )}
                     </p>
+                    {reason && pill && (
+                      <div className="mt-1.5 flex flex-col items-start gap-0.5">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${pill.className}`}
+                        >
+                          <span>{pill.icon}</span>
+                          <span className="truncate max-w-[160px]">{reason.label}</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <span className="shrink-0 text-xs text-[var(--bb-warm-800)]/40">
                     ›
@@ -562,6 +766,14 @@ export default function MePage() {
           </div>
         )}
       </section>
+
+      {/* ── Stamp detail dialog ─────────────────────────────────────── */}
+      {selectedMilestone && (
+        <StampDetailDialog
+          milestone={selectedMilestone}
+          onClose={() => setSelectedMilestone(null)}
+        />
+      )}
 
       {/* Bottom spacer */}
       <div className="h-4" />

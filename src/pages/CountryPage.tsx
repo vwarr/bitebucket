@@ -104,13 +104,18 @@ export default function CountryPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Back button */}
+      {/* Persistent back button — uses navigate(-1) so it works whether the
+          user came from /countries or /map (sheet → flag → page).
+          Note: edge-swipe-to-go-back is intentionally not implemented;
+          Tauri's webview doesn't expose iOS swipe gestures reliably. */}
       <button
         type="button"
-        onClick={() => { selectCountry(null); navigate("/countries"); }}
-        className="inline-flex items-center gap-1 text-sm text-amber-600 hover:text-amber-800 font-medium mb-6 cursor-pointer transition-colors"
+        onClick={() => { selectCountry(null); navigate(-1); }}
+        aria-label="Back"
+        className="inline-flex items-center gap-2 mb-6 px-3 py-2 rounded-lg bg-[var(--bb-warm-900)] text-[var(--bb-warm-50)] text-sm font-bold cursor-pointer transition-colors hover:opacity-90 shadow-sm"
       >
-        <span>&larr;</span> All Countries
+        <span className="text-base leading-none">&larr;</span>
+        <span>Back</span>
       </button>
 
       {/* Country header */}

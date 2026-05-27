@@ -1,6 +1,12 @@
 import { useState, useMemo, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import type { Dish, Country } from "../types";
+import {
+  buildReasonContext,
+  pickDiscoverReason,
+  reasonPillStyles,
+} from "../utils/discoverReasons";
+import { readMilestoneState } from "../stores/milestoneSlice";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -107,12 +113,23 @@ export default function DiscoverPage() {
     [countries],
   );
 
+  const reasonCtx = useMemo(
+    () => buildReasonContext(readMilestoneState()),
+    // depends on data driving milestone state
+    [countries, dishes, userEntries],
+  );
+
   // ── Recommendations: dishes you haven't tried, from started countries ──
 
   const recommendations = useMemo(() => {
     const triedDishIds = new Set(
       Array.from(userEntries.values())
         .filter((e) => e.status === "tried")
+        .map((e) => e.dishId),
+    );
+    const skippedDishIds = new Set(
+      Array.from(userEntries.values())
+        .filter((e) => e.status === "skipped")
         .map((e) => e.dishId),
     );
 
@@ -129,6 +146,7 @@ export default function DiscoverPage() {
     let candidates = dishes.filter(
       (d) =>
         !triedDishIds.has(d.id) &&
+        !skippedDishIds.has(d.id) &&
         !isDishFiltered(d) &&
         (startedCountryIds.size === 0 || startedCountryIds.has(d.countryId)),
     );
@@ -138,6 +156,7 @@ export default function DiscoverPage() {
       const extra = dishes.filter(
         (d) =>
           !triedDishIds.has(d.id) &&
+          !skippedDishIds.has(d.id) &&
           !isDishFiltered(d) &&
           !startedCountryIds.has(d.countryId),
       );
@@ -250,15 +269,29 @@ export default function DiscoverPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {recommendations.map((dish) => (
-              <DishCard
-                key={dish.id}
-                dish={dish}
-                country={countryMap.get(dish.countryId)}
-                onTryDish={handleTryDish}
-                tried={isTried(dish.id)}
-              />
-            ))}
+            {recommendations.map((dish) => {
+              const reason = pickDiscoverReason(dish, reasonCtx);
+              const pill = reason ? reasonPillStyles(reason.source) : null;
+              return (
+                <div key={dish.id} className="flex flex-col gap-1.5">
+                  {reason && pill && (
+                    <span
+                      className={`self-start inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${pill.className}`}
+                      title={reason.label}
+                    >
+                      <span>{pill.icon}</span>
+                      <span className="truncate max-w-[180px]">{reason.label}</span>
+                    </span>
+                  )}
+                  <DishCard
+                    dish={dish}
+                    country={countryMap.get(dish.countryId)}
+                    onTryDish={handleTryDish}
+                    tried={isTried(dish.id)}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

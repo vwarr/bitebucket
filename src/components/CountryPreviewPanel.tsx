@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import emailjs from "@emailjs/browser";
 import { useAppStore } from "../stores/appStore";
 import type { DishStatus } from "../types";
+
+// ── Helpers ──────────────────────────────────────────────────────────
 
 function flagEmoji(code: string): string {
   return [...code.toUpperCase()]
@@ -8,7 +12,35 @@ function flagEmoji(code: string): string {
     .join("");
 }
 
+function formatDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatPopulation(pop: number): string {
+  if (pop >= 1_000_000_000) return `${(pop / 1_000_000_000).toFixed(1)}B`;
+  if (pop >= 1_000_000) {
+    const m = pop / 1_000_000;
+    return `${m >= 100 ? Math.round(m) : m.toFixed(1)}M`;
+  }
+  if (pop >= 1_000) return `${Math.round(pop / 1_000)}k`;
+  return `${pop}`;
+}
+
+function buildMetaLine(country: { region: string; capital?: string; population?: number }): string {
+  const parts: string[] = [country.region.toUpperCase()];
+  if (country.capital) parts.push(`CAPITAL ${country.capital.toUpperCase()}`);
+  if (country.population != null) parts.push(`POP ${formatPopulation(country.population)}`);
+  return parts.join(" · ");
+}
+
+type FilterKey = "all" | "untried" | "signature" | "mild";
+
+// ── CountryPreviewPanel (desktop) ───────────────────────────────────
+
 export default function CountryPreviewPanel() {
+  const navigate = useNavigate();
   const previewedCountryId = useAppStore((s) => s.previewedCountryId);
   const closePreview = useAppStore((s) => s.closePreview);
   const countries = useAppStore((s) => s.countries);
@@ -17,16 +49,27 @@ export default function CountryPreviewPanel() {
   const setDishStatus = useAppStore((s) => s.setDishStatus);
   const getCountryProgress = useAppStore((s) => s.getCountryProgress);
   const selectDish = useAppStore((s) => s.selectDish);
+  const setLogConfirmDish = useAppStore((s) => s.setLogConfirmDish);
+  const openLogSheet = useAppStore((s) => s.openLogSheet);
 
   const [isVisible, setIsVisible] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+
+  const [showSuggestForm, setShowSuggestForm] = useState(false);
+  const [suggestName, setSuggestName] = useState("");
+  const [suggestDesc, setSuggestDesc] = useState("");
+  const [suggestStatus, setSuggestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  // ── Derived data ────────────────────────────────────────────────────
 
   const country = useMemo(
     () => countries.find((c) => c.id === previewedCountryId) ?? null,
     [countries, previewedCountryId],
   );
 
-  const countryDishes = useMemo(
+  const allCountryDishes = useMemo(
     () =>
       previewedCountryId !== null
         ? dishes
@@ -40,9 +83,52 @@ export default function CountryPreviewPanel() {
     [dishes, previewedCountryId],
   );
 
-  // Animate open/close
+  const triedCount = useMemo(
+    () => allCountryDishes.filter((d) => userEntries.get(d.id)?.status === "tried").length,
+    [allCountryDishes, userEntries],
+  );
+  const wantCount = useMemo(
+    () => allCountryDishes.filter((d) => userEntries.get(d.id)?.status === "want-to-try").length,
+    [allCountryDishes, userEntries],
+  );
+  const toGoCount = useMemo(
+    () =>
+      allCountryDishes.filter((d) => {
+        const s = userEntries.get(d.id)?.status ?? "untried";
+        return s === "untried" || s === "skipped";
+      }).length,
+    [allCountryDishes, userEntries],
+  );
+  const signatureCount = useMemo(
+    () => allCountryDishes.filter((d) => d.isSignature).length,
+    [allCountryDishes],
+  );
+  const mildCount = useMemo(
+    () => allCountryDishes.filter((d) => d.spiceLevel === "mild").length,
+    [allCountryDishes],
+  );
+
+  const filteredDishes = useMemo(() => {
+    switch (activeFilter) {
+      case "untried":
+        return allCountryDishes.filter((d) => {
+          const s = userEntries.get(d.id)?.status ?? "untried";
+          return s === "untried";
+        });
+      case "signature":
+        return allCountryDishes.filter((d) => d.isSignature);
+      case "mild":
+        return allCountryDishes.filter((d) => d.spiceLevel === "mild");
+      default:
+        return allCountryDishes;
+    }
+  }, [allCountryDishes, userEntries, activeFilter]);
+
+  // ── Animation ───────────────────────────────────────────────────────
+
   useEffect(() => {
     if (previewedCountryId !== null) {
+      setActiveFilter("all");
       const id = requestAnimationFrame(() => setIsVisible(true));
       return () => cancelAnimationFrame(id);
     } else {
@@ -50,7 +136,6 @@ export default function CountryPreviewPanel() {
     }
   }, [previewedCountryId]);
 
-  // Clear pending close timer when a new country is previewed
   useEffect(() => {
     if (previewedCountryId !== null && closeTimer.current) {
       clearTimeout(closeTimer.current);
@@ -58,28 +143,23 @@ export default function CountryPreviewPanel() {
     }
   }, [previewedCountryId]);
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (closeTimer.current) clearTimeout(closeTimer.current);
     };
   }, []);
 
-  // Esc key closes
   useEffect(() => {
     if (previewedCountryId === null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setIsVisible(false);
-        closeTimer.current = setTimeout(() => {
-          closePreview();
-          closeTimer.current = null;
-        }, 300);
+        handleClose();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [previewedCountryId, closePreview]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewedCountryId]);
 
   const handleClose = () => {
     setIsVisible(false);
@@ -87,7 +167,36 @@ export default function CountryPreviewPanel() {
     closeTimer.current = setTimeout(() => {
       closePreview();
       closeTimer.current = null;
-    }, 300);
+    }, 200);
+  };
+
+  const handleSuggestSubmit = async () => {
+    if (!suggestName.trim() || !country) return;
+    setSuggestStatus("sending");
+    try {
+      await emailjs.send(
+        import.meta.env.VITE_EMAILJS_SERVICE_ID || "default_service",
+        import.meta.env.VITE_EMAILJS_TEMPLATE_ID || "default_template",
+        {
+          to_email: "varunswarrier@gmail.com",
+          country_name: country.name,
+          dish_name: suggestName.trim(),
+          dish_description: suggestDesc.trim() || "(no description)",
+          subject: `BiteBucket: Dish suggestion for ${country.name}`,
+        },
+        import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "",
+      );
+      setSuggestStatus("sent");
+      setSuggestName("");
+      setSuggestDesc("");
+      setTimeout(() => {
+        setSuggestStatus("idle");
+        setShowSuggestForm(false);
+      }, 2000);
+    } catch {
+      setSuggestStatus("error");
+      setTimeout(() => setSuggestStatus("idle"), 3000);
+    }
   };
 
   if (previewedCountryId === null || !country) return null;
@@ -99,143 +208,331 @@ export default function CountryPreviewPanel() {
       {/* Backdrop */}
       <div
         onClick={handleClose}
-        className={`fixed inset-0 z-[2000] bg-black/30 backdrop-blur-sm transition-opacity duration-300 ${
-          isVisible ? "opacity-100" : "opacity-0"
+        aria-hidden="true"
+        className={`fixed inset-0 z-[2000] bg-black/40 transition-opacity duration-200 ${
+          isVisible ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       />
 
-      {/* Panel */}
-      <aside
-        className={`fixed right-0 top-0 z-[2001] h-full w-full max-w-md bg-white shadow-2xl transition-transform duration-300 ease-out flex flex-col ${
-          isVisible ? "translate-x-0" : "translate-x-full"
-        }`}
+      {/* Centered card */}
+      <div
         role="dialog"
         aria-label={`${country.name} dishes`}
+        aria-modal="true"
+        className={`fixed inset-0 z-[2001] flex items-center justify-center p-6 transition-opacity duration-200 ${
+          isVisible ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={handleClose}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 px-5 py-4">
-          <div className="flex items-start gap-3">
-            <span className="text-4xl leading-none">{flagEmoji(country.code)}</span>
-            <div>
-              <h2 className="text-xl font-bold text-amber-900">{country.name}</h2>
-              <p className="text-xs text-amber-600">{country.region}</p>
-              <p className="mt-1.5 text-sm font-medium text-amber-800">
-                {progress.tried} of {progress.total} dishes tried ({progress.percentage}%)
-              </p>
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className={`flex w-[400px] max-w-[92vw] max-h-[85vh] flex-col rounded-2xl bg-[#fdfaf6] border border-stone-200 shadow-2xl transition-transform duration-200 ${
+            isVisible ? "scale-100" : "scale-95"
+          }`}
+        >
+          {/* ── Header ─────────────────────────────────────────────── */}
+          <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3">
+            <button
+              type="button"
+              onClick={() => {
+                const cid = country.id;
+                closePreview();
+                navigate(`/country/${cid}`);
+              }}
+              aria-label={`Open ${country.name} foods page`}
+              className="flex items-center gap-3 min-w-0 flex-1 text-left rounded-lg -mx-1 px-1 py-0.5 transition-colors hover:bg-stone-100 active:bg-stone-200 cursor-pointer"
+            >
+              <span className="text-5xl leading-none shrink-0" aria-hidden="true">
+                {flagEmoji(country.code)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-bold text-stone-900 leading-tight truncate">
+                  {country.name}
+                </h2>
+                <p className="font-mono text-[10px] uppercase tracking-wide text-stone-500 mt-0.5 truncate">
+                  {buildMetaLine(country)}
+                </p>
+              </div>
+              <span
+                className="shrink-0 text-stone-400 text-2xl leading-none font-light"
+                aria-hidden="true"
+              >
+                ›
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              aria-label="Close"
+              className="shrink-0 mt-1 flex h-7 w-7 items-center justify-center rounded-full bg-stone-200 text-stone-600 transition-colors hover:bg-stone-300"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 6l12 12M6 18L18 6" />
+              </svg>
+            </button>
+          </div>
+
+          {/* ── 3-segment status bar ───────────────────────────────── */}
+          <div className="mx-5 flex gap-1.5 rounded-xl border border-stone-200 p-1">
+            <div className="flex flex-1 flex-col items-center rounded-lg bg-green-100 px-2 py-1.5">
+              <span className="font-mono text-sm font-bold text-green-800">{triedCount}</span>
+              <span className="font-mono text-[8px] uppercase tracking-wide text-green-700">Tried</span>
+            </div>
+            <div className="flex flex-1 flex-col items-center rounded-lg bg-amber-100 px-2 py-1.5">
+              <span className="font-mono text-sm font-bold text-amber-800">{wantCount}</span>
+              <span className="font-mono text-[8px] uppercase tracking-wide text-amber-700">Want</span>
+            </div>
+            <div className="flex flex-1 flex-col items-center rounded-lg bg-stone-100 px-2 py-1.5 border border-dashed border-stone-300">
+              <span className="font-mono text-sm font-bold text-stone-700">{toGoCount}</span>
+              <span className="font-mono text-[8px] uppercase tracking-wide text-stone-600">To Go</span>
             </div>
           </div>
-          <button
-            onClick={handleClose}
-            className="rounded-full p-1.5 text-amber-500 hover:bg-white/60 transition-colors"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 6l12 12M6 18L18 6" />
-            </svg>
-          </button>
-        </div>
 
-        {/* Progress bar */}
-        <div className="h-1 w-full bg-amber-100">
-          <div
-            className="h-full bg-gradient-to-r from-amber-400 to-green-500 transition-all duration-500"
-            style={{ width: `${progress.percentage}%` }}
-          />
-        </div>
+          {/* ── Progress bar ───────────────────────────────────────── */}
+          <div className="mx-5 mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-xs text-stone-500">Progress</span>
+              <span className="font-mono text-xs font-bold text-amber-700">
+                {progress.percentage}%
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-stone-200">
+              <div
+                className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                style={{ width: `${progress.percentage}%` }}
+              />
+            </div>
+          </div>
 
-        {/* Dish list */}
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {countryDishes.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-gray-400">
-              No dishes available yet for this country.
-            </p>
-          ) : (
-            <ul className="space-y-1.5">
-              {countryDishes.map((dish) => {
-                const entry = userEntries.get(dish.id);
-                const status: DishStatus = entry?.status ?? "untried";
-                const tried = status === "tried";
+          {/* ── Filter pills ───────────────────────────────────────── */}
+          <div className="mx-5 mt-3 flex gap-1.5 flex-wrap">
+            {(
+              [
+                { key: "all" as FilterKey, label: `all ${allCountryDishes.length}` },
+                { key: "untried" as FilterKey, label: `untried ${toGoCount}` },
+                { key: "signature" as FilterKey, label: `signature ${signatureCount}` },
+                { key: "mild" as FilterKey, label: `🌶 mild ${mildCount}` },
+              ] as { key: FilterKey; label: string }[]
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveFilter(key)}
+                className={`rounded-full border px-3 py-1 font-mono text-xs font-medium transition-colors ${
+                  activeFilter === key
+                    ? "border-amber-500 bg-amber-500 text-white"
+                    : "border-stone-300 bg-white text-stone-600 hover:border-amber-300 hover:bg-amber-50"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-                return (
-                  <li
-                    key={dish.id}
-                    className={`group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-all hover:border-amber-200 hover:bg-amber-50/50 ${
-                      tried ? "bg-green-50/40" : ""
-                    }`}
-                  >
-                    {/* Checkbox toggle */}
+          {/* ── Dish list ──────────────────────────────────────────── */}
+          <div className="mt-3 flex-1 overflow-y-auto px-5 pb-6">
+            {filteredDishes.length === 0 ? (
+              <p className="py-8 text-center text-sm text-stone-400">
+                No dishes match this filter.
+              </p>
+            ) : (
+              <>
+                <p className="text-[10px] text-stone-400 px-1 mb-2">
+                  <span className="text-amber-400">★</span> = must-try signature dish
+                </p>
+                <ul className="space-y-1.5">
+                  {filteredDishes.map((dish) => {
+                    const entry = userEntries.get(dish.id);
+                    const status: DishStatus = entry?.status ?? "untried";
+                    const tried = status === "tried";
+                    const wantToTry = status === "want-to-try";
+
+                    if (tried) {
+                      return (
+                        <li
+                          key={dish.id}
+                          className="flex items-center gap-3 rounded-xl bg-green-50 border border-green-100 px-3 py-2.5"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setDishStatus(dish.id, "untried")}
+                            aria-label="Mark as untried"
+                            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-green-500 text-white shadow-sm transition-colors hover:bg-green-600"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => selectDish(dish.id)}
+                            className="flex-1 text-left min-w-0"
+                          >
+                            <p className="font-bold text-green-900 truncate text-sm">
+                              {dish.name}
+                              {dish.isSignature && (
+                                <span className="ml-1 text-amber-500" title="Signature">★</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-green-700">
+                              {entry?.rating != null && (
+                                <span className="mr-1">{"★".repeat(entry.rating)}</span>
+                              )}
+                              {entry?.triedDate && <span>{formatDate(entry.triedDate)}</span>}
+                            </p>
+                          </button>
+                        </li>
+                      );
+                    }
+
+                    if (wantToTry) {
+                      return (
+                        <li
+                          key={dish.id}
+                          className="flex items-center gap-3 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setDishStatus(dish.id, "untried")}
+                            aria-label="Remove from want-to-try"
+                            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-amber-400 text-white shadow-sm transition-colors hover:bg-amber-500"
+                          >
+                            <span className="text-sm leading-none" aria-hidden="true">📌</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => selectDish(dish.id)}
+                            className="flex-1 text-left min-w-0"
+                          >
+                            <p className="font-bold text-amber-900 truncate text-sm">
+                              {dish.name}
+                              {dish.isSignature && (
+                                <span className="ml-1 text-amber-500" title="Signature">★</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-amber-700">want · {dish.category}</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLogConfirmDish(dish.id);
+                              openLogSheet();
+                            }}
+                            className="shrink-0 rounded-full border border-amber-400 px-2.5 py-1 font-mono text-xs font-bold text-amber-700 transition-colors hover:bg-amber-400 hover:text-white"
+                          >
+                            log
+                          </button>
+                        </li>
+                      );
+                    }
+
+                    return (
+                      <li
+                        key={dish.id}
+                        className="flex items-center gap-3 rounded-xl border border-dashed border-stone-300 bg-white px-3 py-2.5 hover:bg-stone-50 transition-colors"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setDishStatus(dish.id, "tried")}
+                          aria-label="Mark as tried"
+                          className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-stone-300 bg-white text-transparent transition-colors hover:border-green-400 hover:bg-green-50"
+                        >
+                          <svg className="h-4 w-4 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => selectDish(dish.id)}
+                          className="flex-1 text-left min-w-0"
+                        >
+                          <p className="text-sm text-stone-800 truncate">
+                            {dish.name}
+                            {dish.isSignature && (
+                              <span className="ml-1 text-amber-400" title="Signature">★</span>
+                            )}
+                          </p>
+                          <p className="text-xs text-stone-400">{dish.category}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLogConfirmDish(dish.id);
+                            openLogSheet();
+                          }}
+                          className="shrink-0 rounded-full border border-stone-300 px-2.5 py-1 font-mono text-xs font-medium text-stone-500 transition-colors hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700"
+                        >
+                          log
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+
+            {/* Suggest a dish */}
+            <div className="mt-4 pt-3 border-t border-gray-200">
+              {!showSuggestForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowSuggestForm(true)}
+                  className="w-full py-2.5 text-sm font-medium text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-xl transition-colors"
+                >
+                  + Suggest a dish for {country.name}
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold tracking-widest text-amber-600 uppercase">
+                    Suggest a Dish
+                  </p>
+                  <input
+                    type="text"
+                    value={suggestName}
+                    onChange={(e) => setSuggestName(e.target.value)}
+                    placeholder="Dish name"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                  />
+                  <textarea
+                    value={suggestDesc}
+                    onChange={(e) => setSuggestDesc(e.target.value)}
+                    placeholder="Brief description (optional)"
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                  />
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setDishStatus(dish.id, tried ? "untried" : "tried")}
-                      className={`shrink-0 flex h-6 w-6 items-center justify-center rounded-md border-2 transition-all ${
-                        tried
-                          ? "border-green-500 bg-green-500 text-white"
-                          : "border-amber-300 hover:border-green-400 hover:bg-green-50"
-                      }`}
-                      aria-label={tried ? "Mark as untried" : "Mark as tried"}
+                      onClick={() => {
+                        setShowSuggestForm(false);
+                        setSuggestName("");
+                        setSuggestDesc("");
+                      }}
+                      className="flex-1 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-lg transition-colors"
                     >
-                      {tried && (
-                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
+                      Cancel
                     </button>
-
-                    {/* Dish name - clickable to open detail */}
                     <button
                       type="button"
-                      onClick={() => selectDish(dish.id)}
-                      className="flex-1 text-left min-w-0"
+                      onClick={handleSuggestSubmit}
+                      disabled={!suggestName.trim() || suggestStatus === "sending"}
+                      className="flex-1 py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
                     >
-                      <p className={`font-medium truncate ${tried ? "text-green-800" : "text-amber-900"}`}>
-                        {dish.name}
-                        {dish.isSignature && (
-                          <span className="ml-1.5 text-amber-500" title="Signature">★</span>
-                        )}
-                      </p>
-                      {dish.nameOriginal && dish.nameOriginal !== dish.name && (
-                        <p className="text-xs text-gray-400 truncate">{dish.nameOriginal}</p>
-                      )}
+                      {suggestStatus === "sending"
+                        ? "Sending…"
+                        : suggestStatus === "sent"
+                          ? "✓ Sent!"
+                          : suggestStatus === "error"
+                            ? "Failed – retry?"
+                            : "Submit"}
                     </button>
-
-                    {/* Want-to-try and Skip secondary actions */}
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDishStatus(dish.id, status === "want-to-try" ? "untried" : "want-to-try")
-                        }
-                        className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                          status === "want-to-try"
-                            ? "bg-amber-500 text-white"
-                            : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                        }`}
-                        title="Want to try"
-                      >
-                        ★
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDishStatus(dish.id, status === "skipped" ? "untried" : "skipped")
-                        }
-                        className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                          status === "skipped"
-                            ? "bg-gray-500 text-white"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                        }`}
-                        title="Skip"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </aside>
+      </div>
     </>
   );
 }

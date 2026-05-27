@@ -35,6 +35,8 @@ export interface Country {
   code: string;
   region: Region;
   continent: Continent;
+  capital?: string;
+  population?: number;
 }
 
 // ── Dish Enums & Helpers ─────────────────────────────────────────────
@@ -126,4 +128,51 @@ export interface ToastMessage {
   countryName: string;
   countryFlag: string;
   isFirstInCountry: boolean;
+  /** Number of dishes the user has tried in this country, including this one (1-based). */
+  dishCountInCountry: number;
+}
+
+// ── Milestones ────────────────────────────────────────────────────────
+
+export type MilestoneCategoryId =
+  | "country-completion"
+  | "region-completion"
+  | "streaks"
+  | "volume"
+  | "diversity"
+  | "adventurous"
+  | "themed-collections"
+  | "signatures"
+  | "first-touch";
+
+export interface MilestoneState {
+  countries: Country[];
+  dishes: Dish[];
+  userEntries: Map<number, UserDishEntry>;
+}
+
+export interface Milestone {
+  id: string;
+  categoryId: MilestoneCategoryId;
+  name: string;
+  description: string;
+  icon: string;
+  hidden: boolean;
+  predicate: (state: MilestoneState) => boolean;
+}
+
+// ── Discover Reasons ──────────────────────────────────────────────────
+
+export type DiscoverReasonSource =
+  | "milestone"
+  | "taste"
+  | "unexplored"
+  | "profile"
+  | "seasonal";
+
+export interface DiscoverReason {
+  source: DiscoverReasonSource;
+  label: string;
+  /** computed factor score 0..1 */
+  factor: number;
 }

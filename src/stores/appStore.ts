@@ -14,6 +14,12 @@ import type {
   UserProfile,
 } from "../types";
 
+/**
+ * Bump this when adding required onboarding steps. Users with a
+ * persisted `onboardingVersion` lower than this will see the flow again.
+ */
+export const ONBOARDING_VERSION = 1;
+
 const SPICE_ORDER: Record<SpiceLevel, number> = {
   mild: 0,
   medium: 1,
@@ -38,11 +44,12 @@ export interface ProfileSlice {
 
 export interface ProgressSlice {
   userEntries: Map<number, UserDishEntry>;
-  setDishStatus: (dishId: number, status: DishStatus) => void;
+  setDishStatus: (dishId: number, status: DishStatus, triedDate?: string) => void;
   setDishRating: (dishId: number, rating: number) => void;
   setDishNotes: (dishId: number, notes: string) => void;
   setDishPhoto: (dishId: number, photoUrl: string | null) => void;
-  getCountryProgress: (countryId: number) => { tried: number; total: number; percentage: number };
+  isDishSkipped: (dishId: number) => boolean;
+  getCountryProgress: (countryId: number) => { tried: number; total: number; skippedCount: number; percentage: number };
   getGlobalProgress: () => { countriesStarted: number; countriesCompleted: number; totalTried: number; totalDishes: number; percentage: number };
   getTimeline: () => UserDishEntry[];
   getWantToTryDishes: () => Array<{ dish: Dish; country: Country }>;
@@ -70,6 +77,10 @@ export interface UISlice {
   setRegionFilter: (region: Region | null) => void;
   onboardingComplete: boolean;
   setOnboardingComplete: (complete: boolean) => void;
+  onboardingVersion: number;
+  restartOnboarding: () => void;
+  showWelcomeCallout: boolean;
+  setShowWelcomeCallout: (show: boolean) => void;
   showLogSheet: boolean;
   openLogSheet: () => void;
   closeLogSheet: () => void;
@@ -85,6 +96,9 @@ export interface UISlice {
   hideToast: () => void;
   pendingPhoto: string | null;
   setPendingPhoto: (url: string | null) => void;
+  showSuggestForm: boolean;
+  openSuggestForm: () => void;
+  closeSuggestForm: () => void;
 }
 
 export type AppState = DataSlice & ProfileSlice & ProgressSlice & UISlice;
@@ -184,11 +198,24 @@ const createProfileSlice: StateCreator<AppState, [], [], ProfileSlice> = (set, g
 const createProgressSlice: StateCreator<AppState, [], [], ProgressSlice> = (set, get) => ({
   userEntries: new Map<number, UserDishEntry>(),
 
-  setDishStatus: (dishId, status) => {
+  setDishStatus: (dishId, status, triedDate) => {
     set((state) => {
       const next = new Map(state.userEntries);
       const entry = ensureEntry(next, dishId);
-      next.set(dishId, { ...entry, status, triedDate: status === "tried" && !entry.triedDate ? new Date().toISOString() : status === "tried" ? entry.triedDate : null });
+      let nextTriedDate: string | null;
+      if (status === "tried") {
+        if (triedDate) {
+          // Normalize a yyyy-mm-dd input to an ISO string at local noon to avoid TZ slippage
+          nextTriedDate = /^\d{4}-\d{2}-\d{2}$/.test(triedDate)
+            ? new Date(`${triedDate}T12:00:00`).toISOString()
+            : new Date(triedDate).toISOString();
+        } else {
+          nextTriedDate = entry.triedDate ?? new Date().toISOString();
+        }
+      } else {
+        nextTriedDate = null;
+      }
+      next.set(dishId, { ...entry, status, triedDate: nextTriedDate });
       return { userEntries: next };
     });
   },
@@ -220,6 +247,8 @@ const createProgressSlice: StateCreator<AppState, [], [], ProgressSlice> = (set,
     });
   },
 
+  isDishSkipped: (dishId) => get().userEntries.get(dishId)?.status === "skipped",
+
   getCountryProgress: (countryId) => {
     const { dishes, userEntries, profile } = get();
     const isDishFiltered = get().isDishFiltered;
@@ -227,9 +256,17 @@ const createProgressSlice: StateCreator<AppState, [], [], ProgressSlice> = (set,
     if (profile.excludeFilteredFromProgress) {
       countryDishes = countryDishes.filter((d) => !isDishFiltered(d));
     }
-    const total = countryDishes.length;
+    const totalAll = countryDishes.length;
+    const skippedCount = countryDishes.filter((d) => userEntries.get(d.id)?.status === "skipped").length;
+    // N-K: denominator excludes skipped
+    const total = totalAll - skippedCount;
     const tried = countryDishes.filter((d) => userEntries.get(d.id)?.status === "tried").length;
-    return { tried, total, percentage: total > 0 ? Math.round((tried / total) * 100) : 0 };
+    return {
+      tried,
+      total,
+      skippedCount,
+      percentage: total > 0 ? Math.round((tried / total) * 100) : 0,
+    };
   },
 
   getGlobalProgress: () => {
@@ -240,6 +277,8 @@ const createProgressSlice: StateCreator<AppState, [], [], ProgressSlice> = (set,
     if (profile.excludeFilteredFromProgress) {
       activeDishes = dishes.filter((d) => !isDishFiltered(d));
     }
+    // Exclude skipped dishes from denominator (N-K)
+    activeDishes = activeDishes.filter((d) => userEntries.get(d.id)?.status !== "skipped");
     const totalDishes = activeDishes.length;
     const totalTried = activeDishes.filter((d) => userEntries.get(d.id)?.status === "tried").length;
     let countriesStarted = 0;
@@ -370,7 +409,17 @@ const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
   setRegionFilter: (region) => set({ regionFilter: region }),
 
   onboardingComplete: false,
-  setOnboardingComplete: (complete) => set({ onboardingComplete: complete }),
+  setOnboardingComplete: (complete) =>
+    set(complete
+      ? { onboardingComplete: true, onboardingVersion: ONBOARDING_VERSION, showWelcomeCallout: true }
+      : { onboardingComplete: false, onboardingVersion: 0 }),
+
+  onboardingVersion: 0,
+  restartOnboarding: () =>
+    set({ onboardingComplete: false, onboardingVersion: 0 }),
+
+  showWelcomeCallout: false,
+  setShowWelcomeCallout: (show) => set({ showWelcomeCallout: show }),
 
   showLogSheet: false,
   openLogSheet: () => set({ showLogSheet: true, logSearchQuery: "", logConfirmDishId: null }),
@@ -392,13 +441,17 @@ const createUISlice: StateCreator<AppState, [], [], UISlice> = (set) => ({
 
   pendingPhoto: null,
   setPendingPhoto: (url) => set({ pendingPhoto: url }),
+
+  showSuggestForm: false,
+  openSuggestForm: () => set({ showSuggestForm: true }),
+  closeSuggestForm: () => set({ showSuggestForm: false }),
 });
 
-type PersistedState = Pick<AppState, "profile" | "userEntries" | "onboardingComplete">;
+type PersistedState = Pick<AppState, "profile" | "userEntries" | "onboardingComplete" | "onboardingVersion" | "showWelcomeCallout">;
 
 const persistOptions: PersistOptions<AppState, PersistedState> = {
   name: "bitebucket-user-data",
-  partialize: (state) => ({ profile: state.profile, userEntries: state.userEntries, onboardingComplete: state.onboardingComplete }),
+  partialize: (state) => ({ profile: state.profile, userEntries: state.userEntries, onboardingComplete: state.onboardingComplete, onboardingVersion: state.onboardingVersion, showWelcomeCallout: state.showWelcomeCallout }),
   storage: {
     getItem: (name) => {
       const raw = localStorage.getItem(name);

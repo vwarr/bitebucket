@@ -23,6 +23,7 @@ export default function LogSheet() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setPendingPhoto = useAppStore((s) => s.setPendingPhoto);
   const pendingPhoto = useAppStore((s) => s.pendingPhoto);
+  const openSuggestForm = useAppStore((s) => s.openSuggestForm);
 
   // Animate open/close
   useEffect(() => {
@@ -258,7 +259,7 @@ export default function LogSheet() {
               <button
                 type="button"
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-gray-300 text-gray-600 text-sm font-medium hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50 transition-all"
-                onClick={() => {/* no-op */}}
+                onClick={() => openSuggestForm()}
               >
                 <span>+</span>
                 <span>Custom dish</span>

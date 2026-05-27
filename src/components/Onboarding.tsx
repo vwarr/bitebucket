@@ -22,6 +22,7 @@ const ALLERGEN_PILLS: { value: AllergenType; label: string; emoji: string }[] =
     { value: "fish", label: "Fish", emoji: "🐟" },
     { value: "soy", label: "Soy", emoji: "🫘" },
     { value: "eggs", label: "Eggs", emoji: "🥚" },
+    { value: "sesame", label: "Sesame", emoji: "🌱" },
   ];
 
 const DIET_PILLS: { value: DietaryRestriction | "none"; label: string }[] = [
@@ -47,6 +48,14 @@ const SPICE_INDEX: Record<SpiceLevel, number> = {
 };
 
 const MAX_CLASSICS = 30;
+const TOTAL_STEPS = 6;
+// Step indices:
+// 0 = Allergens, 1 = Diet/Spice, 2 = Log explainer, 3 = Want explainer,
+// 4 = Skip explainer, 5 = Pre-check classics
+const STEP_LOG = 2;
+const STEP_WANT = 3;
+const STEP_SKIP = 4;
+const STEP_CLASSICS = 5;
 
 // ── Step indicator ────────────────────────────────────────────────────
 
@@ -322,6 +331,143 @@ function Step3Classics({
   );
 }
 
+// ── Feature-tour step (Log / Want / Skip explainer) ───────────────────
+
+type TourVariant = "log" | "want" | "skip";
+
+interface TourConfig {
+  emoji: string;
+  title: string;
+  subtitle: string;
+  titleClass: string;
+  bullets: string[];
+  demo: { dishName: string; subline: string };
+}
+
+const TOUR_CONFIG: Record<TourVariant, TourConfig> = {
+  log: {
+    emoji: "✓",
+    title: "Log",
+    subtitle: "A dish you've actually eaten.",
+    titleClass: "text-green-600",
+    bullets: [
+      "Counts toward your map progress",
+      "Adds to your timeline & streak",
+      "Lets you rate, photograph, and add notes",
+    ],
+    demo: { dishName: "Pho bo", subline: "★★★★ · today" },
+  },
+  want: {
+    emoji: "📌",
+    title: "Want",
+    subtitle: "A dish you'd like to try.",
+    titleClass: "text-amber-600",
+    bullets: [
+      "Pinned to your wishlist",
+      "Surfaces in Discover suggestions",
+      "One tap to log when you finally eat it",
+    ],
+    demo: { dishName: "Banh xeo", subline: "want · street food" },
+  },
+  skip: {
+    emoji: "✕",
+    title: "Skip",
+    subtitle: "Not for me — de-prioritized in recs.",
+    titleClass: "text-stone-500",
+    bullets: [
+      "Excluded from country progress (N–K)",
+      "Hidden from Discover recommendations",
+      "Easy to undo from any dish row",
+    ],
+    demo: { dishName: "Balut", subline: "skipped" },
+  },
+};
+
+function DemoRow({ variant }: { variant: TourVariant }) {
+  const cfg = TOUR_CONFIG[variant];
+
+  if (variant === "log") {
+    return (
+      <div className="flex items-center gap-3 rounded-xl bg-green-50 border border-green-100 px-3 py-2.5">
+        <span className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-green-500 text-white text-sm font-bold">
+          ✓
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-green-900 truncate">{cfg.demo.dishName}</p>
+          <p className="text-xs text-green-700">{cfg.demo.subline}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === "want") {
+    return (
+      <div className="flex items-center gap-3 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5">
+        <span className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-amber-400 text-white text-sm">
+          📌
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-amber-900 truncate">{cfg.demo.dishName}</p>
+          <p className="text-xs text-amber-700">{cfg.demo.subline}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // skip
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-stone-50 border border-stone-200 border-dashed px-3 py-2.5 opacity-60">
+      <span className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-stone-400 text-stone-500 text-sm">
+        ✕
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-stone-600 truncate line-through">
+          {cfg.demo.dishName}
+        </p>
+        <p className="text-xs text-stone-500">{cfg.demo.subline}</p>
+      </div>
+    </div>
+  );
+}
+
+function StepFeatureTour({
+  variant,
+  stepNumber,
+}: {
+  variant: TourVariant;
+  stepNumber: number;
+}) {
+  const cfg = TOUR_CONFIG[variant];
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--bb-warm-800)]/50">
+          Step {stepNumber} of {TOTAL_STEPS}
+        </p>
+        <h2 className={`mt-1 text-3xl font-bold leading-tight ${cfg.titleClass}`}>
+          <span className="mr-2">{cfg.emoji}</span>
+          {cfg.title}
+        </h2>
+        <p className="mt-2 text-sm text-[var(--bb-warm-800)]/70">{cfg.subtitle}</p>
+      </div>
+
+      <DemoRow variant={variant} />
+
+      <ul className="flex flex-col gap-2">
+        {cfg.bullets.map((b, i) => (
+          <li
+            key={i}
+            className="flex items-start gap-2 text-sm text-[var(--bb-warm-800)]"
+          >
+            <span className={`mt-0.5 shrink-0 ${cfg.titleClass}`}>•</span>
+            <span>{b}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ── Main Onboarding component ─────────────────────────────────────────
 
 export default function Onboarding() {
@@ -425,6 +571,8 @@ export default function Onboarding() {
         maxSpiceLevel: spiceLevel,
       });
       goToStep(2, "left");
+    } else if (step < STEP_CLASSICS) {
+      goToStep(step + 1, "left");
     }
   };
 
@@ -433,7 +581,16 @@ export default function Onboarding() {
   };
 
   const handleSkip = () => {
-    goToStep(1, "left");
+    if (step === 0) {
+      goToStep(1, "left");
+    } else if (step === 1) {
+      // Persist current diet/spice selections so back-nav still works
+      updateProfile({
+        dietaryRestrictions: [...selectedDiet],
+        maxSpiceLevel: spiceLevel,
+      });
+      goToStep(2, "left");
+    }
   };
 
   const handleFinish = () => {
@@ -471,7 +628,7 @@ export default function Onboarding() {
           {/* Animated step content */}
           <div
             className={`transition-all duration-200 ease-out ${slideClass}`}
-            style={{ minHeight: step === 2 ? "440px" : "320px" }}
+            style={{ minHeight: step === STEP_CLASSICS ? "440px" : "360px" }}
           >
             {step === 0 && (
               <Step1Allergens
@@ -487,7 +644,16 @@ export default function Onboarding() {
                 onSpiceChange={setSpiceLevel}
               />
             )}
-            {step === 2 && (
+            {step === STEP_LOG && (
+              <StepFeatureTour variant="log" stepNumber={STEP_LOG + 1} />
+            )}
+            {step === STEP_WANT && (
+              <StepFeatureTour variant="want" stepNumber={STEP_WANT + 1} />
+            )}
+            {step === STEP_SKIP && (
+              <StepFeatureTour variant="skip" stepNumber={STEP_SKIP + 1} />
+            )}
+            {step === STEP_CLASSICS && (
               <Step3Classics
                 checked={checkedClassics}
                 onToggle={toggleClassic}
@@ -500,10 +666,10 @@ export default function Onboarding() {
           {/* Footer */}
           <div className="flex flex-col gap-3 mt-auto shrink-0">
             {/* Step dots */}
-            <StepDots current={step} total={3} />
+            <StepDots current={step} total={TOTAL_STEPS} />
 
             {/* Action buttons */}
-            {step < 2 ? (
+            {step < STEP_CLASSICS ? (
               <div className="flex flex-col gap-2">
                 <button
                   onClick={handleNext}
@@ -521,6 +687,22 @@ export default function Onboarding() {
                   </button>
                 )}
                 {step === 1 && (
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      onClick={handleBack}
+                      className="flex-1 py-2 text-sm text-[var(--bb-warm-800)]/50 hover:text-[var(--bb-warm-800)]/80 transition-colors cursor-pointer"
+                    >
+                      ← back
+                    </button>
+                    <button
+                      onClick={handleSkip}
+                      className="flex-1 py-2 text-sm text-[var(--bb-warm-800)]/50 hover:text-[var(--bb-warm-800)]/80 transition-colors cursor-pointer"
+                    >
+                      skip for now
+                    </button>
+                  </div>
+                )}
+                {step >= STEP_LOG && step < STEP_CLASSICS && (
                   <button
                     onClick={handleBack}
                     className="w-full py-2 text-sm text-[var(--bb-warm-800)]/50 hover:text-[var(--bb-warm-800)]/80 transition-colors cursor-pointer"

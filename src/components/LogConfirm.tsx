@@ -91,8 +91,22 @@ export default function LogConfirm() {
     // Check before setting
     const progress = getCountryProgress(dish.countryId);
     const isFirst = progress.tried === 0;
+    const dishCountInCountry = progress.tried + 1;
 
-    setDishStatus(dish.id, "tried");
+    // Resolve the chosen date based on the When toggle.
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let chosenDate: string | undefined;
+    if (when === "today") {
+      chosenDate = todayStr;
+    } else if (when === "yesterday") {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      chosenDate = y.toISOString().slice(0, 10);
+    } else if (when === "earlier") {
+      chosenDate = earlierDate || todayStr;
+    }
+
+    setDishStatus(dish.id, "tried", chosenDate);
     if (rating !== null) setDishRating(dish.id, rating);
     if (notes.trim()) setDishNotes(dish.id, notes.trim());
     if (pendingPhoto) {
@@ -104,6 +118,7 @@ export default function LogConfirm() {
       countryName: country.name,
       countryFlag: flagEmoji(country.code),
       isFirstInCountry: isFirst,
+      dishCountInCountry,
     });
 
     // Slide down then close everything

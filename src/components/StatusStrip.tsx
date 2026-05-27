@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useAppStore } from "../stores/appStore";
 
 // ── StatusStrip ──────────────────────────────────────────────────────
@@ -18,7 +18,23 @@ export default function StatusStrip() {
   const getCountriesByStatus = useAppStore((s) => s.getCountriesByStatus);
   const getCountriesByStatusList = useAppStore((s) => s.getCountriesByStatusList);
   const previewCountry = useAppStore((s) => s.previewCountry);
-  const { completed, started, toGo } = getCountriesByStatus();
+
+  // Subscribe to the reactive state the counts actually depend on. The
+  // getters above are stable references, so subscribing to them alone
+  // never triggers a re-render. getCountriesByStatus -> getCountryProgress
+  // reads countries, dishes, userEntries and profile, so we subscribe to
+  // each of those and recompute when any of them changes (e.g. logging a
+  // dish mutates userEntries).
+  const userEntries = useAppStore((s) => s.userEntries);
+  const dishes = useAppStore((s) => s.dishes);
+  const countries = useAppStore((s) => s.countries);
+  const profile = useAppStore((s) => s.profile);
+
+  const { completed, started, toGo } = useMemo(
+    () => getCountriesByStatus(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getCountriesByStatus, userEntries, dishes, countries, profile],
+  );
 
   const [activeSegment, setActiveSegment] = useState<Segment | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,8 +60,13 @@ export default function StatusStrip() {
     previewCountry(countryId);
   };
 
-  // Get country lists only when dropdown is open
-  const countryLists = activeSegment ? getCountriesByStatusList() : null;
+  // Get country lists only when dropdown is open. Recompute off the same
+  // reactive state so the dropdown stays in sync with the counts.
+  const countryLists = useMemo(
+    () => (activeSegment ? getCountriesByStatusList() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeSegment, getCountriesByStatusList, userEntries, dishes, countries, profile],
+  );
   const activeCountries =
     activeSegment === "done"
       ? countryLists?.completed

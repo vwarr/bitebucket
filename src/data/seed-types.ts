@@ -13,6 +13,8 @@ export interface SeedCountry {
   code: string; // ISO 3166-1 alpha-2
   region: Region;
   continent: Continent;
+  capital?: string;
+  population?: number;
 }
 
 export interface SeedDish {

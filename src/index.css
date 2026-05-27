@@ -1,17 +1,28 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
-/* ── BiteBucket color scheme (warm food-themed) ───────────────────── */
+/* ── BiteBucket color scheme — "journal" theme from flow-wireframes ──
+   Palette tokens (design source of truth):
+     ink #1a1a1a / ink-2 #4a4a4a / ink-3 #8a8a8a   (text + hand-drawn lines)
+     paper #fbf8f2 / paper-2 #f5f0e4                (page backgrounds)
+     accent #d97706 / accent-soft #fde68a / accent-2 #b45309  (amber)
+     good #16a34a / good-soft #bbf7d0               (complete / success)
+     warn #dc2626 / muted #d6d3d1
+     ocean #a3c4d6 (powder blue) / land #faf3df (cream) / ocean-stitch #6b95ab
+   The amber accent (~32°) and powder-blue ocean (~200°) are a complementary
+   pair, so land/water separate at max hue contrast — the classic map palette.
+   ─────────────────────────────────────────────────────────────────── */
 
 :root {
+  /* Amber accent ramp — anchored on the design's accent #d97706 */
   --bb-amber-50: #fffbeb;
   --bb-amber-100: #fef3c7;
-  --bb-amber-200: #fde68a;
+  --bb-amber-200: #fde68a; /* accent-soft */
   --bb-amber-300: #fcd34d;
   --bb-amber-400: #fbbf24;
   --bb-amber-500: #f59e0b;
-  --bb-amber-600: #d97706;
-  --bb-amber-700: #b45309;
+  --bb-amber-600: #d97706; /* accent */
+  --bb-amber-700: #b45309; /* accent-2 */
   --bb-amber-800: #92400e;
   --bb-amber-900: #78350f;
 
@@ -21,23 +32,39 @@
   --bb-orange-500: #f97316;
   --bb-orange-600: #ea580c;
 
-  --bb-warm-50: #faf5f0;
-  --bb-warm-100: #f5ebe0;
-  --bb-warm-200: #e8d5c0;
-  --bb-warm-800: #3d2c1e;
-  --bb-warm-900: #2b1d12;
+  /* Warm "paper" neutrals — mapped to design paper / paper-2 / ink */
+  --bb-warm-50: #fbf8f2;  /* paper */
+  --bb-warm-100: #f5f0e4; /* paper-2 */
+  --bb-warm-200: #d6d3d1; /* muted */
+  --bb-warm-800: #4a4a4a; /* ink-2 */
+  --bb-warm-900: #1a1a1a; /* ink */
 
-  --bb-sidebar-bg: #1c1410;
-  --bb-sidebar-text: #d4c4b0;
-  --bb-sidebar-active: #f59e0b;
-  --bb-sidebar-hover: rgba(245, 158, 11, 0.12);
+  /* Journal map tokens */
+  --bb-ocean: #a3c4d6;        /* powder-blue water */
+  --bb-ocean-stitch: #6b95ab; /* darker stitch/border on water */
+  --bb-land: #faf3df;         /* cream land (untouched country fill) */
+
+  --bb-sidebar-bg: #1a1a1a;   /* ink */
+  --bb-sidebar-text: #d6d3d1; /* muted */
+  --bb-sidebar-active: #d97706; /* accent */
+  --bb-sidebar-hover: rgba(217, 119, 6, 0.12);
 
   --bb-green-400: #4ade80;
   --bb-green-500: #22c55e;
-  --bb-green-600: #16a34a;
+  --bb-green-600: #16a34a; /* good */
 }
 
 /* ── Base reset & defaults ────────────────────────────────────────── */
+
+html,
+body {
+  height: 100%;
+  /* Lock the document to the viewport: it must never scroll. Only inner
+     panels (the non-map <main>'s overflow-auto, sheets, dropdowns) scroll. */
+  overflow: hidden;
+  /* Kill iOS Safari rubber-band / overscroll chaining at the document edge. */
+  overscroll-behavior: none;
+}
 
 body {
   margin: 0;
@@ -49,14 +76,19 @@ body {
 }
 
 #root {
-  min-height: 100svh;
+  /* Fill the viewport exactly (no min-height slack) and never introduce
+     document scroll. The app's own layout (Layout.tsx `h-svh`) lives inside. */
+  height: 100%;
+  overflow: hidden;
   display: flex;
 }
 
 /* ── Leaflet overrides for BiteBucket ─────────────────────────────── */
 
 .leaflet-container {
-  background: #f5ebe0;
+  /* Powder-blue ocean (design --ocean). The country GeoJSON paints cream/
+     status land on top; water shows through as this. */
+  background: var(--bb-ocean);
   font-family: inherit;
 }
 
@@ -93,11 +125,16 @@ body {
   background: var(--bb-amber-300);
 }
 
-/* ── Mobile bottom tab bar body padding ──────────────────────────── */
-
+/* ── Mobile page-scroll bottom spacing ───────────────────────────────
+   Document scroll is locked (html/body overflow:hidden), so the bottom
+   tab-bar clearance must live INSIDE the inner scroll container, not on
+   body. `pb-16` (4rem ≈ 64px) covers the tab bar; on devices with a home
+   indicator we add env(safe-area-inset-bottom) so content isn't clipped
+   behind the bar. Scoped to mobile so the md: sidebar layout (pb-0) is
+   untouched. */
 @media (max-width: 767px) {
-  body {
-    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  .bb-page-scroll {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
